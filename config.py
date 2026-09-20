@@ -60,7 +60,7 @@ BOT_USERNAME = getenv('BOT_USERNAME', '@AR_X69BOT')
 BOT_NAME = getenv('BOT_NAME', '𖤍 ˹ ᴀʀ ꭙ ʙᴏᴛ ˼')
 IS_WEB_SUP = getenv('IS_WEB_SUP', 'True').lower() == 'true'
 
-SUDO_USERS = [int(x) for x in getenv("SUDO_USERS", "8986776894").split() if x.isdigit()]
+SUDO_USERS = [int(x) for x in getenv("SUDO_USERS", "8986776894","8752352375").split() if x.isdigit()]
 SUPPORT_USERS = [int(x) for x in getenv("SUPPORT_USERS", "8986776894").split() if x.isdigit()]
 WHITELIST_USERS = [int(x) for x in getenv("WHITELIST_USERS", "8986776894").split() if x.isdigit()]
 OWNER_ID = int(getenv("OWNER_ID", "8986776894"))
