@@ -272,7 +272,7 @@ async def get_chatbot_reply(text: str):
         }
 
         data = {
-            "model"="openai/gpt-oss-120b",
+            "model"=="openai/gpt-oss-120b",
             "messages": [
                 {
                     "role": "system",
