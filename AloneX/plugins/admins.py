@@ -999,3 +999,106 @@ async def adminlist_command(client: Client, message: Message):
         await msg.delete()
         return await message.reply_document(buf, caption="📋 Full Adminlist")
     await msg.edit_text(text, parse_mode=ParseMode.HTML)
+
+@pbot.on_message(filters.command("bots", prefix_cmds), group=110)
+async def bots_command(client: Client, message: Message):
+    # Private chat check
+    if message.chat.type == enums.ChatType.PRIVATE:
+        return await message.reply_text(
+            font("❌ This command only works in groups!")
+        )
+
+    chat = message.chat
+
+    msg = await message.reply_text(
+        font("🤖 Checking bots in this group...")
+    )
+
+    bots = []
+    admin_bots = []
+    normal_bots = []
+
+    try:
+        async for member in client.get_chat_members(chat.id):
+            user = member.user
+
+            if not user.is_bot:
+                continue
+
+            bots.append(member)
+
+            if member.status in [
+                ChatMemberStatus.OWNER,
+                ChatMemberStatus.ADMINISTRATOR
+            ]:
+                admin_bots.append(member)
+            else:
+                normal_bots.append(member)
+
+    except Exception as e:
+        return await msg.edit_text(
+            f"❌ <b>Error:</b> {html.escape(str(e))}",
+            parse_mode=ParseMode.HTML
+        )
+
+    if not bots:
+        return await msg.edit_text(
+            "🤖 <b>No bots found in this group.</b>",
+            parse_mode=ParseMode.HTML
+        )
+
+    text = (
+        f"🤖 <b>Bots in {html.escape(chat.title or 'Group')}</b>\n\n"
+        f"📊 <b>Total Bots:</b> {len(bots)}\n"
+        f"👮 <b>Admin Bots:</b> {len(admin_bots)}\n"
+        f"👤 <b>Normal Bots:</b> {len(normal_bots)}\n\n"
+    )
+
+    if admin_bots:
+        text += "👮 <b>Admin Bots:</b>\n"
+
+        for member in admin_bots:
+            user = member.user
+            name = html.escape(user.first_name or "Unknown")
+
+            if user.username:
+                bot_name = f"@{html.escape(user.username)}"
+            else:
+                bot_name = name
+
+            if member.status == ChatMemberStatus.OWNER:
+                role = "👑 Owner"
+            else:
+                role = "🛡️ Admin"
+
+            text += (
+                f"• <a href='tg://user?id={user.id}'>{name}</a> "
+                f"({bot_name}) — <b>{role}</b>\n"
+            )
+
+        text += "\n"
+
+    if normal_bots:
+        text += "🤖 <b>Normal Bots:</b>\n"
+
+        for member in normal_bots:
+            user = member.user
+            name = html.escape(user.first_name or "Unknown")
+
+            if user.username:
+                bot_name = f"@{html.escape(user.username)}"
+            else:
+                bot_name = name
+
+            text += (
+                f"• <a href='tg://user?id={user.id}'>{name}</a> "
+                f"({bot_name})\n"
+            )
+
+    if len(text) > 4096:
+        text = text[:4000] + "\n\n<i>List is too long...</i>"
+
+    await msg.edit_text(
+        text,
+        parse_mode=ParseMode.HTML
+    )
