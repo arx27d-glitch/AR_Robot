@@ -943,7 +943,7 @@ async def adminlist_command(client: Client, message: Message):
         text += "✅ <i>Note: These are up-to-date values</i>\n\n"
     if owner:
         text += "👑 <b>Owner</b>:\n"
-        name = html.escape(owner.user.first_name)
+        name = html.escape(owner.user.first_name or "Unknown")
         if owner.custom_title:
             text += f"➣ <a href='tg://user?id={owner.user.id}'>{name}</a> - <i>{html.escape(owner.custom_title)}</i>\n\n"
         else:
