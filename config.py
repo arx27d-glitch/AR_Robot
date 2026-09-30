@@ -98,7 +98,7 @@ BTN_ROWS = int(getenv('BTN_ROWS', '6'))
 
 
 # some media source
-PM_START_IMG = getenv('START_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
+PM_START_IMG = getenv('START_IMG_URL', "https://litter.catbox.moe/yn5dtq.jpg")
 
 HELP_CMD_IMG = getenv('HELP_CMD_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
 
