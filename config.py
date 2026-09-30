@@ -98,17 +98,17 @@ BTN_ROWS = int(getenv('BTN_ROWS', '6'))
 
 
 # some media source
-PM_START_IMG = getenv('PM_START_IMG', "https://files.catbox.moe/9o70x8.png")
+PM_START_IMG = getenv('PM_START_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
 
-HELP_CMD_IMG = getenv('HELP_CMD_IMG', "https://files.catbox.moe/9o70x8.png")
-
-
-HELP_MODULE_IMG = getenv('HELP_MODULE_IMG', "https://files.catbox.moe/9o70x8.png")
-
-START_IMG = getenv('START_IMG', "https://files.catbox.moe/9o70x8.png")
+HELP_CMD_IMG = getenv('HELP_CMD_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
 
 
-FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "https://files.catbox.moe/9o70x8.png")
+HELP_MODULE_IMG = getenv('HELP_MODULE_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
+
+START_IMG = getenv('START_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
+
+
+FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
 
 AF_START_STICKERS = [
   "CAACAgUAAxkBAAEBrV9nWukpft8gmtrZVMkbO4GKlZy0HQACWxUAAnHv2FZkjr7WjG3OjzYE",
