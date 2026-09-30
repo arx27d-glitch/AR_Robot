@@ -153,6 +153,16 @@ async def chatbot_handler(_, message: Message):
     if not input_text:
         return
 
+    # 👑 Antidote Owner Recognition
+    OWNER_ID = 8986776894  # ← Yahan apni Telegram User ID daalo
+
+    if message.from_user and message.from_user.id == OWNER_ID:
+        input_text = (
+            "IMPORTANT: The person messaging you is your owner, Antidote. "
+            "Address him respectfully as 'Malik Antidote' or 'Owner Antidote Sir'.\n\n"
+            + input_text
+        )
+
     # Remove bot mention from text if present
     if f"@{pbot.me.username}" in input_text:
         input_text = input_text.replace(f"@{pbot.me.username}", "").strip()
