@@ -98,17 +98,17 @@ BTN_ROWS = int(getenv('BTN_ROWS', '6'))
 
 
 # some media source
-PM_START_IMG = getenv('PM_START_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
+PM_START_IMG = getenv('PM_START_IMG', "YOUR_NEW_IMAGE_URL")
 
 HELP_CMD_IMG = getenv('HELP_CMD_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
 
 
 HELP_MODULE_IMG = getenv('HELP_MODULE_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
 
-START_IMG = getenv('START_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
+START_IMG = getenv('START_IMG', "YOUR_NEW_IMAGE_URL")
 
 
-FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
+FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "YOUR_NEW_IMAGE_URL")
 
 AF_START_STICKERS = [
   "CAACAgUAAxkBAAEBrV9nWukpft8gmtrZVMkbO4GKlZy0HQACWxUAAnHv2FZkjr7WjG3OjzYE",
