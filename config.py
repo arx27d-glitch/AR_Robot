@@ -40,7 +40,7 @@ LOG_GROUP_ID = int(getenv("LOG_GROUP_ID", "0"))
 
 SUPPORT_GROUP = getenv("SUPPORT_GROUP", "https://t.me/antidote_69")
 
-START_IMG_URL = getenv("START_IMG_URL", "https://files.catbox.moe/opkx6p.png")
+START_IMG_URL = getenv("START_IMG_URL", "https://litter.catbox.moe/m56fbg.jpg")
 
 
 SUPPORT_CHAT = getenv('SUPPORT_CHAT', 'EikoUpdates')
@@ -98,17 +98,17 @@ BTN_ROWS = int(getenv('BTN_ROWS', '6'))
 
 
 # some media source
-PM_START_IMG = getenv('PM_START_IMG', "YOUR_NEW_IMAGE_URL")
+PM_START_IMG = getenv('PM_START_IMG', "https://litter.catbox.moe/m56fbg.jpg")
 
 HELP_CMD_IMG = getenv('HELP_CMD_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
 
 
 HELP_MODULE_IMG = getenv('HELP_MODULE_IMG', "https://kommodo.ai/i/kXeEhZTikZYKVMf0HO7f")
 
-START_IMG = getenv('START_IMG', "YOUR_NEW_IMAGE_URL")
+START_IMG = getenv('START_IMG', "https://litter.catbox.moe/m56fbg.jpg")
 
 
-FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "YOUR_NEW_IMAGE_URL")
+FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "https://litter.catbox.moe/m56fbg.jpg")
 
 AF_START_STICKERS = [
   "CAACAgUAAxkBAAEBrV9nWukpft8gmtrZVMkbO4GKlZy0HQACWxUAAnHv2FZkjr7WjG3OjzYE",
