@@ -5,10 +5,11 @@ import logging
 import random
 import time
 import os
-import hashlib
+import aiohttp
+
+from io import BytesIO
 from datetime import datetime
 from collections import defaultdict, deque
-from urllib.request import urlopen
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -60,10 +61,6 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# CACHE / GLOBALS
-# ============================================================
-
 _user_cache = {}
 _chat_cache = {}
 _rules_cache = {}
@@ -88,11 +85,6 @@ BATCH_INTERVAL = 0.05
 CACHE_TTL = 3600
 PRELOAD_ENABLED = True
 
-
-# ============================================================
-# START EFFECTS
-# ============================================================
-
 START_EFFECTS = {
     '👍': 5107584321108051014,
     '👎': 5104858069142078462,
@@ -115,9 +107,7 @@ SE = (
     5046589136895476101
 )
 
-_SB = None
-_bi = None
-_tr = None
+_SB = _bi = _tr = None
 
 
 _user_queue = asyncio.Queue()
@@ -133,248 +123,200 @@ _cache_expiry = 3600
 
 
 # ============================================================
-# START IMAGE SETTINGS
+# START IMAGE FUNCTIONS
 # ============================================================
-
-START_IMAGE_CACHE_DIR = "start_image_cache"
-
-try:
-    os.makedirs(START_IMAGE_CACHE_DIR, exist_ok=True)
-except Exception:
-    pass
-
-
-def _start_image_cache_path():
-    """
-    URL ke hisaab se alag cache file banata hai.
-    Isliye URL change karne par purani image use nahi hogi.
-    """
-    try:
-        url = getattr(
-            config,
-            "START_IMG_URL",
-            "https://litter.catbox.moe/m56fbg.jpg"
-        )
-
-        url_hash = hashlib.md5(
-            url.encode("utf-8")
-        ).hexdigest()[:16]
-
-        return os.path.join(
-            START_IMAGE_CACHE_DIR,
-            f"start_{url_hash}.jpg"
-        )
-
-    except Exception:
-        return os.path.join(
-            START_IMAGE_CACHE_DIR,
-            "start_default.jpg"
-        )
-
-
-def _get_start_font(size):
-    """
-    Server par available font dhoondta hai.
-    """
-
-    font_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-    ]
-
-    for path in font_paths:
-        try:
-            if os.path.exists(path):
-                return ImageFont.truetype(path, size)
-        except Exception:
-            pass
-
-    return ImageFont.load_default()
-
 
 async def _download_start_image():
     """
-    START_IMG_URL se original image download karta hai.
+    START_IMG_URL se image download karta hai.
     """
 
-    try:
-        url = getattr(
-            config,
-            "START_IMG_URL",
-            "https://litter.catbox.moe/m56fbg.jpg"
-        )
+    url = getattr(config, "START_IMG_URL", None)
 
-        cache_path = _start_image_cache_path()
+    if not url:
+        url = getattr(config, "PM_START_IMG", None)
 
-        if os.path.exists(cache_path):
-            return cache_path
-
-        def _download():
-            with urlopen(url, timeout=30) as response:
-                data = response.read()
-
-            with open(cache_path, "wb") as f:
-                f.write(data)
-
-        await asyncio.to_thread(_download)
-
-        if os.path.exists(cache_path):
-            return cache_path
-
+    if not url:
+        print("[START IMAGE] START_IMG_URL not found.")
         return None
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=25)
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+
+            async with session.get(url) as response:
+
+                if response.status != 200:
+                    print(
+                        f"[START IMAGE] HTTP ERROR: "
+                        f"{response.status}"
+                    )
+                    return None
+
+                data = await response.read()
+
+                if not data:
+                    print("[START IMAGE] Empty image data.")
+                    return None
+
+                return data
 
     except Exception as e:
         print(f"[START IMAGE DOWNLOAD ERROR] {e}")
         return None
 
 
-async def _make_start_image(user_name):
+def _get_start_font(size):
     """
-    Original START image ko edit karta hai.
+    Server par available font use karega.
+    """
 
-    Old:
-        Hello, AR_X
-        Shadow_Mona
+    fonts = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+    ]
 
-    New:
-        Hello, USER NAME
+    for path in fonts:
+        if os.path.exists(path):
 
-    Name ke peeche transparent dark overlay rahega.
+            try:
+                return ImageFont.truetype(path, size)
+
+            except Exception:
+                pass
+
+    return ImageFont.load_default()
+
+
+def _make_start_image(image_data, user_name):
+    """
+    Original START image par user ka naam add karta hai.
+
+    IMPORTANT:
+    User name ke peeche koi solid rectangle/box nahi banaya gaya.
     """
 
     try:
-        source = await _download_start_image()
 
-        if not source:
-            return None
+        image = Image.open(
+            BytesIO(image_data)
+        ).convert("RGBA")
 
-        def _create():
+        width, height = image.size
 
-            img = Image.open(source).convert("RGBA")
+        # ------------------------------------------------
+        # Image tumhari 1536x1024 design hai.
+        # Position automatic scale hogi.
+        # ------------------------------------------------
 
-            # Original image ka ratio maintain
-            width, height = img.size
+        # "Hello," ke baad username
+        x = int(width * 0.655)
+        y = int(height * 0.375)
 
-            draw = ImageDraw.Draw(img, "RGBA")
+        user_name = str(
+            user_name or "User"
+        ).strip()
 
-            # ------------------------------------------------
-            # IMAGE IS 1536x1024
-            # Agar future mein size different ho to coordinates
-            # automatically scale honge.
-            # ------------------------------------------------
+        if len(user_name) > 20:
+            user_name = user_name[:20] + "…"
 
-            sx = width / 1536
-            sy = height / 1024
+        # Transparent overlay
+        overlay = Image.new(
+            "RGBA",
+            image.size,
+            (0, 0, 0, 0)
+        )
 
-            def scx(x):
-                return int(x * sx)
+        draw = ImageDraw.Draw(overlay)
 
-            def scy(y):
-                return int(y * sy)
+        font_size = max(
+            22,
+            int(width * 0.024)
+        )
 
-            # ------------------------------------------------
-            # OLD USER NAME AREA COVER
-            #
-            # Original image mein:
-            # Hello, 👑 AR_X
-            # Shadow_Mona etc.
-            #
-            # Us area ko transparent dark overlay se cover kar
-            # rahe hain.
-            # ------------------------------------------------
+        name_font = _get_start_font(
+            font_size
+        )
 
-            left = scx(975)
-            top = scy(355)
-            right = scx(1385)
-            bottom = scy(465)
+        # ------------------------------------------------
+        # NO BACKGROUND
+        # NO RECTANGLE
+        # NO BOX
+        # ONLY TEXT
+        # ------------------------------------------------
 
-            draw.rounded_rectangle(
-                (left, top, right, bottom),
-                radius=scx(18),
-                fill=(5, 3, 15, 185),
-                outline=(150, 55, 255, 150),
-                width=max(1, scx(2))
-            )
+        draw.text(
+            (x, y),
+            user_name,
+            font=name_font,
+            fill=(235, 225, 255, 255),
+            stroke_width=0
+        )
 
-            # ------------------------------------------------
-            # USER NAME
-            # ------------------------------------------------
+        image = Image.alpha_composite(
+            image,
+            overlay
+        )
 
-            display_name = str(
-                user_name or "User"
-            ).strip()
+        output = BytesIO()
 
-            if not display_name:
-                display_name = "User"
+        image.convert("RGB").save(
+            output,
+            format="JPEG",
+            quality=95,
+            optimize=True
+        )
 
-            # Long name ko limit
-            if len(display_name) > 20:
-                display_name = display_name[:20] + "..."
+        output.seek(0)
 
-            text = f"Hello, {display_name}"
-
-            name_font = _get_start_font(
-                max(20, scx(31))
-            )
-
-            # Text position
-            text_x = scx(1005)
-            text_y = scy(386)
-
-            # Text shadow
-            draw.text(
-                (text_x + scx(2), text_y + scy(2)),
-                text,
-                font=name_font,
-                fill=(0, 0, 0, 190)
-            )
-
-            # Main text
-            draw.text(
-                (text_x, text_y),
-                text,
-                font=name_font,
-                fill=(245, 235, 255, 255),
-                stroke_width=max(1, scx(1)),
-                stroke_fill=(25, 5, 45, 230)
-            )
-
-            # ------------------------------------------------
-            # SAVE GENERATED IMAGE
-            # ------------------------------------------------
-
-            filename = (
-                f"start_user_"
-                f"{int(time.time() * 1000000)}_"
-                f"{random.randint(1000, 9999)}.png"
-            )
-
-            output = os.path.join(
-                START_IMAGE_CACHE_DIR,
-                filename
-            )
-
-            img.save(
-                output,
-                "PNG",
-                optimize=True
-            )
-
-            return output
-
-        return await asyncio.to_thread(_create)
+        return output
 
     except Exception as e:
-        print(f"[START IMAGE CREATE ERROR] {e}")
+        print(
+            f"[START IMAGE CREATE ERROR] {e}"
+        )
+
+        return None
+
+
+async def _get_dynamic_start_image(user):
+    """
+    User ke first_name ke saath personalized image.
+    """
+
+    try:
+
+        image_data = await _download_start_image()
+
+        if not image_data:
+            return None
+
+        user_name = (
+            user.first_name
+            or "User"
+        )
+
+        return _make_start_image(
+            image_data,
+            user_name
+        )
+
+    except Exception as e:
+
+        print(
+            f"[DYNAMIC START IMAGE ERROR] {e}"
+        )
+
         return None
 
 
 # ============================================================
-# SUPPORT / UPDATE BUTTON
+# BUTTONS
 # ============================================================
 
 def _msb():
+
     global _SB
 
     if _SB:
@@ -404,32 +346,30 @@ def _msb():
         else f"https://t.me/{uc}"
     )
 
-    _SB = InlineKeyboardMarkup([
+    _SB = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton(
-                font('Support'),
-                url=su,
-                style=ButtonStyle.PRIMARY
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                font('Updates'),
-                url=uu,
-                style=ButtonStyle.SUCCESS
-            )
+            [
+                InlineKeyboardButton(
+                    font('Support'),
+                    url=su,
+                    style=ButtonStyle.PRIMARY
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    font('Updates'),
+                    url=uu,
+                    style=ButtonStyle.SUCCESS
+                )
+            ]
         ]
-    ])
+    )
 
     return _SB
 
 
 SB = _msb()
 
-
-# ============================================================
-# SMALL HELPERS
-# ============================================================
 
 def irc(cid):
     pass
@@ -440,6 +380,7 @@ def imc(cid, uid):
 
 
 async def _st():
+
     global _tr, _bi
 
     if _tr:
@@ -448,19 +389,19 @@ async def _st():
     _tr = True
 
     if not _bi:
+
         try:
             _bi = await pbot.get_me()
+
         except Exception as e:
-            print(f"[ST ERROR] {e}")
+            print(
+                f"[ST ERROR] {e}"
+            )
 
 
 def _gbi():
     return _bi
 
-
-# ============================================================
-# START BUTTONS
-# ============================================================
 
 def _gsb(uid):
 
@@ -476,55 +417,79 @@ def _gsb(uid):
         else f"https://t.me/{UPDATE_CHANNEL.lstrip('@')}"
     )
 
-    au = f"https://t.me/{BOT_UN}?startgroup=true"
+    au = (
+        f"https://t.me/{BOT_UN}"
+        f"?startgroup=true"
+    )
 
-    return InlineKeyboardMarkup([
+    return InlineKeyboardMarkup(
         [
-            InlineKeyboardButton(
-                font("＋ 𝐈ηᴛᴇɢʀᴀᴛᴇ 𝐈η 𝐘ᴏᴜʀ 𝐂ʜᴀᴛ ＋"),
-                url=au,
-                style=ButtonStyle.SUCCESS
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                font("🎧 𝐌ᴜsɪᴄ"),
-                url="https://t.me/AR_MUSIC_27BOT?start=help",
-                style=ButtonStyle.PRIMARY
-            ),
-            InlineKeyboardButton(
-                font("⚙ 𝐇ᴇʟᴘ ⚙"),
-                callback_data=f"help_{uid}",
-                style=ButtonStyle.DANGER
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                font("𝐔ᴘᴅᴀᴛᴇs ⎘"),
-                url=uu,
-                style=ButtonStyle.PRIMARY
-            ),
-            InlineKeyboardButton(
-                font("𝐒ᴜᴘᴘᴏʀᴛ ☏︎"),
-                url=su,
-                style=ButtonStyle.PRIMARY
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                font("σᴡηᴇʀ ✧ ᴀʀ"),
-                user_id=config.ALONE_OWNER_ID,
-                style=ButtonStyle.SUCCESS
-            )
+            [
+                InlineKeyboardButton(
+                    font(
+                        "＋ 𝐈ηᴛᴇɢʀᴀᴛᴇ "
+                        "𝐈η 𝐘ᴏᴜʀ 𝐂ʜᴀᴛ ＋"
+                    ),
+                    url=au,
+                    style=ButtonStyle.SUCCESS
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    font("🎧 𝐌ᴜsɪᴄ"),
+                    url=(
+                        "https://t.me/"
+                        "AR_MUSIC_27BOT"
+                        "?start=help"
+                    ),
+                    style=ButtonStyle.PRIMARY
+                ),
+
+                InlineKeyboardButton(
+                    font("⚙ 𝐇ᴇʟᴘ ⚙"),
+                    callback_data=f"help_{uid}",
+                    style=ButtonStyle.DANGER
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    font("𝐔ᴘᴅᴀᴛᴇs ⎘"),
+                    url=uu,
+                    style=ButtonStyle.PRIMARY
+                ),
+
+                InlineKeyboardButton(
+                    font("𝐒ᴜᴘᴘᴏʀᴛ ☏︎"),
+                    url=su,
+                    style=ButtonStyle.PRIMARY
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    font("σᴡηᴇʀ ✧ ᴀʀ"),
+                    user_id=config.ALONE_OWNER_ID,
+                    style=ButtonStyle.SUCCESS
+                )
+            ]
         ]
-    ])
+    )
 
 
 # ============================================================
-# SEND PHOTO
+# SEND PHOTO / MESSAGE
 # ============================================================
 
-async def _sp(cid, p, c=None, rm=None, eid=None, rt=None):
+async def _sp(
+    cid,
+    p,
+    c=None,
+    rm=None,
+    eid=None,
+    rt=None
+):
 
     try:
 
@@ -534,11 +499,126 @@ async def _sp(cid, p, c=None, rm=None, eid=None, rt=None):
         if isinstance(c, (list, tuple)):
             c = c[0] if c else None
 
-        if not p or not isinstance(p, str):
+        # ------------------------------------------------
+        # STRING PHOTO URL
+        # ------------------------------------------------
+
+        if isinstance(p, str):
+
+            kw = {
+                'chat_id': cid,
+                'photo': p,
+                'caption': c,
+                'reply_markup': rm
+            }
+
+            if rt:
+                kw[
+                    'reply_to_message_id'
+                ] = rt
+
+            try:
+
+                if eid:
+                    kw[
+                        'message_effect_id'
+                    ] = eid
+
+                return await pbot.send_photo(
+                    **kw
+                )
+
+            except TypeError:
+
+                try:
+
+                    kw.pop(
+                        'message_effect_id',
+                        None
+                    )
+
+                    if eid:
+                        kw[
+                            'effect_id'
+                        ] = eid
+
+                    return await pbot.send_photo(
+                        **kw
+                    )
+
+                except Exception:
+                    raise
+
+        # ------------------------------------------------
+        # BYTES / BYTESIO
+        # Dynamic image yahin se send hogi.
+        # ------------------------------------------------
+
+        elif isinstance(
+            p,
+            (BytesIO, bytes, bytearray)
+        ):
+
+            photo = p
+
+            if isinstance(p, bytes):
+                photo = BytesIO(p)
+
+            elif isinstance(p, bytearray):
+                photo = BytesIO(bytes(p))
+
+            if hasattr(photo, "seek"):
+                photo.seek(0)
+
+            kw = {
+                'chat_id': cid,
+                'photo': photo,
+                'caption': c,
+                'reply_markup': rm
+            }
+
+            if rt:
+                kw[
+                    'reply_to_message_id'
+                ] = rt
+
+            try:
+
+                if eid:
+                    kw[
+                        'message_effect_id'
+                    ] = eid
+
+                return await pbot.send_photo(
+                    **kw
+                )
+
+            except TypeError:
+
+                kw.pop(
+                    'message_effect_id',
+                    None
+                )
+
+                if eid:
+                    kw[
+                        'effect_id'
+                    ] = eid
+
+                return await pbot.send_photo(
+                    **kw
+                )
+
+        # ------------------------------------------------
+        # INVALID PHOTO
+        # ------------------------------------------------
+
+        else:
 
             if c:
 
                 try:
+
                     return await pbot.send_message(
                         chat_id=cid,
                         text=c,
@@ -548,7 +628,10 @@ async def _sp(cid, p, c=None, rm=None, eid=None, rt=None):
                     )
 
                 except Exception as e:
-                    print(f"[SP MSG ERROR] {e}")
+
+                    print(
+                        f"[SP MSG ERROR] {e}"
+                    )
 
                     return await pbot.send_message(
                         chat_id=cid,
@@ -557,42 +640,11 @@ async def _sp(cid, p, c=None, rm=None, eid=None, rt=None):
 
             return None
 
-        kw = {
-            'chat_id': cid,
-            'photo': p,
-            'caption': c,
-            'reply_markup': rm
-        }
-
-        if rt:
-            kw['reply_to_message_id'] = rt
-
-        try:
-
-            if eid:
-                kw['message_effect_id'] = eid
-
-            return await pbot.send_photo(**kw)
-
-        except TypeError:
-
-            try:
-
-                kw.pop(
-                    'message_effect_id',
-                    None
-                )
-
-                kw['effect_id'] = eid
-
-                return await pbot.send_photo(**kw)
-
-            except:
-                raise
-
     except FloodWait as e:
 
-        print(f"[SP FLOODWAIT] {e}")
+        print(
+            f"[SP FLOODWAIT] {e}"
+        )
 
         await asyncio.sleep(
             min(
@@ -612,7 +664,9 @@ async def _sp(cid, p, c=None, rm=None, eid=None, rt=None):
 
     except Exception as e:
 
-        print(f"[SP ERROR] {e}")
+        print(
+            f"[SP ERROR] {e}"
+        )
 
         try:
 
@@ -631,16 +685,25 @@ async def _sp(cid, p, c=None, rm=None, eid=None, rt=None):
             return None
 
 
-# ============================================================
-# SEND MESSAGE
-# ============================================================
-
-async def _sm(cid, t, rm=None, eid=None, rt=None):
+async def _sm(
+    cid,
+    t,
+    rm=None,
+    eid=None,
+    rt=None
+):
 
     try:
 
-        if isinstance(t, (list, tuple)):
-            t = str(t[0]) if t else ""
+        if isinstance(
+            t,
+            (list, tuple)
+        ):
+            t = (
+                str(t[0])
+                if t
+                else ""
+            )
 
         if not isinstance(t, str):
             t = str(t)
@@ -655,13 +718,17 @@ async def _sm(cid, t, rm=None, eid=None, rt=None):
         }
 
         if rt:
-            kw['reply_to_message_id'] = rt
+            kw[
+                'reply_to_message_id'
+            ] = rt
 
         if eid:
 
             try:
 
-                kw['effect_id'] = eid
+                kw[
+                    'effect_id'
+                ] = eid
 
                 return await pbot.send_message(
                     **kw
@@ -674,7 +741,9 @@ async def _sm(cid, t, rm=None, eid=None, rt=None):
                     None
                 )
 
-                kw['message_effect_id'] = eid
+                kw[
+                    'message_effect_id'
+                ] = eid
 
                 return await pbot.send_message(
                     **kw
@@ -686,7 +755,9 @@ async def _sm(cid, t, rm=None, eid=None, rt=None):
 
     except FloodWait as e:
 
-        print(f"[SM FLOODWAIT] {e}")
+        print(
+            f"[SM FLOODWAIT] {e}"
+        )
 
         await asyncio.sleep(
             min(
@@ -705,7 +776,9 @@ async def _sm(cid, t, rm=None, eid=None, rt=None):
 
     except Exception as e:
 
-        print(f"[SM ERROR] {e}")
+        print(
+            f"[SM ERROR] {e}"
+        )
 
         try:
 
@@ -724,7 +797,7 @@ async def _sm(cid, t, rm=None, eid=None, rt=None):
 
 
 # ============================================================
-# GET CHAT NAME
+# HELPERS
 # ============================================================
 
 async def _gcn(cid):
@@ -741,14 +814,12 @@ async def _gcn(cid):
 
     except Exception as e:
 
-        print(f"[GCN ERROR] {e}")
+        print(
+            f"[GCN ERROR] {e}"
+        )
 
         return "this chat"
 
-
-# ============================================================
-# CHECK MEMBERSHIP
-# ============================================================
 
 async def _cm(cid, uid):
 
@@ -760,33 +831,28 @@ async def _cm(cid, uid):
 
     except Exception as e:
 
-        print(f"[CM ERROR] {e}")
+        print(
+            f"[CM ERROR] {e}"
+        )
 
         return False
 
 
-# ============================================================
-# BASE64
-# ============================================================
-
 def _db64(p):
 
     try:
-
         return base64.b64decode(
             p.encode()
         ).decode()
 
     except Exception as e:
 
-        print(f"[DB64 ERROR] {e}")
+        print(
+            f"[DB64 ERROR] {e}"
+        )
 
         return None
 
-
-# ============================================================
-# AUTO FILTER HANDLER
-# ============================================================
 
 async def _haf(uid, t, p):
 
@@ -843,24 +909,26 @@ async def _haf(uid, t, p):
             f"?start={t}"
         )
 
-        b = InlineKeyboardMarkup([
+        b = InlineKeyboardMarkup(
             [
-                InlineKeyboardButton(
-                    font(
-                        '📢 My ( Channel / Group )'
-                    ),
-                    url=cu,
-                    style=ButtonStyle.PRIMARY
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    font('📁 Get File'),
-                    url=bs,
-                    style=ButtonStyle.SUCCESS
-                )
+                [
+                    InlineKeyboardButton(
+                        font(
+                            '📢 My ( Channel / Group )'
+                        ),
+                        url=cu,
+                        style=ButtonStyle.PRIMARY
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        font('📁 Get File'),
+                        url=bs,
+                        style=ButtonStyle.SUCCESS
+                    )
+                ]
             ]
-        ])
+        )
 
         await _sp(
             uid,
@@ -874,14 +942,12 @@ async def _haf(uid, t, p):
 
     except Exception as e:
 
-        print(f"[HAF ERROR] {e}")
+        print(
+            f"[HAF ERROR] {e}"
+        )
 
         return False
 
-
-# ============================================================
-# GET MEDIA
-# ============================================================
 
 async def _hgm(uid, p):
 
@@ -922,14 +988,12 @@ async def _hgm(uid, p):
 
     except Exception as e:
 
-        print(f"[HGM ERROR] {e}")
+        print(
+            f"[HGM ERROR] {e}"
+        )
 
         return False
 
-
-# ============================================================
-# GET FILE
-# ============================================================
 
 async def _hgf(uid, t, p):
 
@@ -992,15 +1056,11 @@ async def _hgf(uid, t, p):
 
             if it:
 
-                obj = (
+                fuid = getattr(
                     it[-1]
                     if at == "photo"
                     and isinstance(it, list)
-                    else it
-                )
-
-                fuid = getattr(
-                    obj,
+                    else it,
                     "file_unique_id",
                     None
                 )
@@ -1024,28 +1084,30 @@ async def _hgf(uid, t, p):
 
         if not m:
 
-            b = InlineKeyboardMarkup([
+            b = InlineKeyboardMarkup(
                 [
-                    InlineKeyboardButton(
-                        font("⚡ Channel"),
-                        url=(
-                            f"t.me/"
-                            f"{config.UPDATE_CHANNEL.lstrip('@')}"
-                        ),
-                        style=ButtonStyle.PRIMARY
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        font("⚡ Try again"),
-                        url=(
-                            f"t.me/{BOT_UN}"
-                            f"?start={t}"
-                        ),
-                        style=ButtonStyle.SUCCESS
-                    )
+                    [
+                        InlineKeyboardButton(
+                            font("⚡ Channel"),
+                            url=(
+                                f"t.me/"
+                                f"{config.UPDATE_CHANNEL.lstrip('@')}"
+                            ),
+                            style=ButtonStyle.PRIMARY
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            font("⚡ Try again"),
+                            url=(
+                                f"t.me/{BOT_UN}"
+                                f"?start={t}"
+                            ),
+                            style=ButtonStyle.SUCCESS
+                        )
+                    ]
                 ]
-            ])
+            )
 
             await _sm(
                 uid,
@@ -1067,8 +1129,8 @@ async def _hgf(uid, t, p):
             f"✨ **Thank you for using me!**\n"
             f"```\n"
             f"The file will be deleted after "
-            f"{time_formatter(aft)}, so please save it "
-            f"somewhere else like Saved Messages!"
+            f"{time_formatter(aft)}, so please save "
+            f"it somewhere else like Saved Messages!"
             f"```"
         )
 
@@ -1083,14 +1145,12 @@ async def _hgf(uid, t, p):
 
     except Exception as e:
 
-        print(f"[HGF ERROR] {e}")
+        print(
+            f"[HGF ERROR] {e}"
+        )
 
         return False
 
-
-# ============================================================
-# RULES
-# ============================================================
 
 async def _hr(uid, cid):
 
@@ -1116,7 +1176,9 @@ async def _hr(uid, cid):
 
     except Exception as e:
 
-        print(f"[HR ERROR] {e}")
+        print(
+            f"[HR ERROR] {e}"
+        )
 
         await _sm(
             uid,
@@ -1125,10 +1187,6 @@ async def _hr(uid, cid):
 
         return False
 
-
-# ============================================================
-# HELP DEEPLINK
-# ============================================================
 
 async def _hh(uid, msg, u):
 
@@ -1154,14 +1212,10 @@ async def _hh(uid, msg, u):
             f"{font('Hii')} {u.mention}!\n\n"
             f"{font('Need help or want to support us?')}\n\n"
             f"{font('Main available commands:')}\n"
-            f"- /support : "
-            f"{font('Connect with our support.')}\n"
-            f"- /alive : "
-            f"{font('Check uptime')}\n"
-            f"- /donate : "
-            f"{font('For information about donations!')}\n"
-            f"- /privacy : "
-            f"{font('Learn how we protect your privacy.')}\n"
+            f"- /support : {font('Connect with our support.')}\n"
+            f"- /alive : {font('Check uptime')}\n"
+            f"- /donate : {font('For information about donations!')}\n"
+            f"- /privacy : {font('Learn how we protect your privacy.')}\n"
             f"- {font('In a group: Get your group settings.')}"
             f"</b></blockquote>\n"
             f"━━━━━━━━━━━━━━━━━━━"
@@ -1179,7 +1233,9 @@ async def _hh(uid, msg, u):
 
     except Exception as e:
 
-        print(f"[HH ERROR] {e}")
+        print(
+            f"[HH ERROR] {e}"
+        )
 
         await _sm(
             uid,
@@ -1195,10 +1251,7 @@ async def _hh(uid, msg, u):
 
 async def _dl(msg):
 
-    a = msg.text.split(
-        None,
-        1
-    )
+    a = msg.text.split(None, 1)
 
     if len(a) < 2:
         return False
@@ -1245,10 +1298,7 @@ async def _dl(msg):
             _, _, p = t.partition('-')
 
             return (
-                await _hgm(
-                    uid,
-                    p
-                )
+                await _hgm(uid, p)
                 if p
                 else False
             )
@@ -1293,7 +1343,9 @@ async def _dl(msg):
 
     except Exception as e:
 
-        print(f"[DL ERROR] {e}")
+        print(
+            f"[DL ERROR] {e}"
+        )
 
         await _sm(
             uid,
@@ -1304,7 +1356,7 @@ async def _dl(msg):
 
 
 # ============================================================
-# START LOG
+# LOGGING
 # ============================================================
 
 async def _bst(uid, u, cmd):
@@ -1370,12 +1422,10 @@ async def _bst(uid, u, cmd):
 
     except Exception as e:
 
-        print(f"[BST ERROR] {e}")
+        print(
+            f"[BST ERROR] {e}"
+        )
 
-
-# ============================================================
-# GROUP START LOG
-# ============================================================
 
 async def _bst_group(chat, u, cmd):
 
@@ -1472,7 +1522,9 @@ async def _process_start_queue():
 
                 finally:
 
-                    _last_process_time[uid] = time.time()
+                    _last_process_time[
+                        uid
+                    ] = time.time()
 
                     await asyncio.sleep(
                         0.1
@@ -1491,10 +1543,6 @@ async def _process_start_queue():
             await asyncio.sleep(1)
 
 
-# ============================================================
-# QUEUE START
-# ============================================================
-
 async def _ensure_queue_processor():
 
     global _queue_processor_started
@@ -1512,7 +1560,9 @@ async def _ensure_queue_processor():
 # PRIVATE START
 # ============================================================
 
-async def _handle_start_private(message: Message):
+async def _handle_start_private(
+    message: Message
+):
 
     try:
 
@@ -1520,10 +1570,6 @@ async def _handle_start_private(message: Message):
 
         if not u:
             return
-
-        # ----------------------------------------------------
-        # DEEPLINK
-        # ----------------------------------------------------
 
         if (
             message.text
@@ -1539,10 +1585,9 @@ async def _handle_start_private(message: Message):
 
         is_cached = (
             'start' in _cmd_cache[uid]
-            and
-            (
-                ct -
-                _cmd_cache[uid]['start']
+            and (
+                ct
+                - _cmd_cache[uid]['start']
             ) < _cache_expiry
         )
 
@@ -1550,8 +1595,8 @@ async def _handle_start_private(message: Message):
 
             _cmd_cache[uid]['start'] = ct
 
-            join_source = await get_user_join_source(
-                uid
+            join_source = (
+                await get_user_join_source(uid)
             )
 
             asyncio.create_task(
@@ -1563,13 +1608,15 @@ async def _handle_start_private(message: Message):
             )
 
             asyncio.create_task(
-                add_user({
-                    'id': uid,
-                    'first_name': u.first_name,
-                    'last_name': u.last_name,
-                    'username': u.username,
-                    'is_bot': u.is_bot
-                })
+                add_user(
+                    {
+                        'id': uid,
+                        'first_name': u.first_name,
+                        'last_name': u.last_name,
+                        'username': u.username,
+                        'is_bot': u.is_bot
+                    }
+                )
             )
 
             if join_source in [
@@ -1581,9 +1628,9 @@ async def _handle_start_private(message: Message):
                     activate_user(uid)
                 )
 
-        # ----------------------------------------------------
-        # BOT INFO
-        # ----------------------------------------------------
+        # ------------------------------------------------
+        # BOT NAME
+        # ------------------------------------------------
 
         bi = _gbi()
 
@@ -1594,22 +1641,23 @@ async def _handle_start_private(message: Message):
             else "I"
         )
 
-        # ----------------------------------------------------
+        # ------------------------------------------------
         # BUTTONS
-        # ----------------------------------------------------
+        # ------------------------------------------------
 
         b = _gsb(uid)
 
-        # ----------------------------------------------------
+        # ------------------------------------------------
         # START CAPTION
-        # ----------------------------------------------------
+        # ------------------------------------------------
 
         tx = (
             f"<blockquote><b>"
             f"⍣ 𝖧𝖾𝗒𝖺 {u.mention} {bm} "
-            f"𝖨'𝗆 𝖠𝗇 𝖠𝖽𝗏𝖺𝗇𝖼𝖾 𝖠𝖨 "
-            f"𝖨𝗇𝗍𝖾𝗀𝗋𝖺𝗍𝖾𝖽 𝖱𝗈𝖻𝗈𝗍, "
-            f"𝖨'𝗅𝗅 𝖬𝖺𝗇𝖺𝗀𝖾 "
+            f"𝖨'𝗆 𝖠𝗇 𝖠𝖽𝗏𝖺𝗇𝖼𝖾 "
+            f"𝖠𝖨 𝖨𝗇𝗍𝖾𝗀𝗋𝖺𝗍𝖾𝖽 "
+            f"𝖱𝗈𝖻𝗈𝗍, 𝖨'𝗅𝗅 "
+            f"𝖬𝖺𝗇𝖺𝗀𝖾 "
             f"𝖸𝗈𝗎𝗋 𝖦𝗋𝗈𝗎𝗉 "
             f"𝖤𝖺𝗌𝗂𝗅𝗒."
             f"</b></blockquote>\n"
@@ -1620,69 +1668,53 @@ async def _handle_start_private(message: Message):
             f"➛ E𝖺𝗌𝗒 𝖳𝗈 𝖴𝗌𝖾, "
             f"𝖠𝗅𝗅 𝖨𝗇 𝖮𝗇𝖾 𝖡𝗈𝗍\n"
             f"➛ 𝖲𝖺𝖿𝖾𝗌𝗍 "
-            f"𝖦𝗋𝗈𝗎𝗉 𝖬𝖺𝗇𝖺𝗀𝖾𝗆𝖾𝗇𝗍 "
+            f"𝖦𝗋𝗈𝗎𝗉 "
+            f"𝖬𝖺𝗇𝖺𝗀𝖾𝗆𝖾𝗇𝗍 "
             f"𝖡𝗈𝗍"
             f"</b></blockquote>\n"
             f"──────────────────────\n"
             f"<blockquote><b>"
             f"⍣ 𝖧𝗂𝗍 𝖳𝗁𝖾 "
-            f"/help 𝖡𝗎𝗍𝗍𝗈𝗇 𝖳𝗈 "
-            f"𝖪𝗇𝗈𝗐 𝖬𝗒 "
-            f"𝖠𝖻𝗂𝗅𝗂𝗍𝗂𝖾𝗌"
+            f"/help 𝖡𝗎𝗍𝗍𝗈𝗇 "
+            f"𝖳𝗈 𝖪𝗇𝗈𝗐 "
+            f"𝖬𝗒 𝖠𝖻𝗂𝗅𝗂𝗍𝗂𝖾𝗌"
             f"</b></blockquote>"
         )
 
-        # ----------------------------------------------------
-        # CREATE DYNAMIC START IMAGE
-        # ----------------------------------------------------
+        # ------------------------------------------------
+        # CREATE PERSONALIZED IMAGE
+        # ------------------------------------------------
 
-        start_image = await _make_start_image(
-            u.first_name or "User"
+        start_image = (
+            await _get_dynamic_start_image(u)
         )
-
-        # ----------------------------------------------------
-        # SEND DYNAMIC IMAGE
-        # ----------------------------------------------------
 
         if start_image:
 
-            try:
-
-                await _sp(
-                    cid=message.chat.id,
-                    p=start_image,
-                    c=tx,
-                    rm=b,
-                    eid=random.choice(SE)
-                )
-
-            finally:
-
-                try:
-
-                    if os.path.exists(
-                        start_image
-                    ):
-
-                        os.remove(
-                            start_image
-                        )
-
-                except Exception:
-                    pass
+            # IMPORTANT:
+            # _sp ab BytesIO image accept karta hai.
+            await _sp(
+                cid=message.chat.id,
+                p=start_image,
+                c=tx,
+                rm=b,
+                eid=random.choice(SE)
+            )
 
         else:
 
-            # ------------------------------------------------
-            # IMAGE CREATE FAIL HO TO ORIGINAL URL SEND
-            # ------------------------------------------------
-
+            # Agar image download/create fail ho
+            # to normal original image send hogi.
             await _sp(
                 cid=message.chat.id,
                 p=getattr(
                     config,
-                    "START_IMG_URL",
-                    None
+                    "PM_START_IMG",
+                    getattr(
+                        config,
+                        "START_IMG_URL",
+                        None
+                    )
                 ),
                 c=tx,
                 rm=b,
@@ -1710,7 +1742,7 @@ async def _handle_start_private(message: Message):
 
 
 # ============================================================
-# PRIVATE START COMMAND
+# START PRIVATE COMMAND
 # ============================================================
 
 @pbot.on_message(
@@ -1759,7 +1791,7 @@ async def start_private(
 
 
 # ============================================================
-# GROUP START
+# START GROUP
 # ============================================================
 
 @pbot.on_message(
@@ -1803,10 +1835,11 @@ async def start_group(
                 None
             ),
             c=(
-                "👋 Hello everyone! Rosie here.\n"
-                "I'm ready to manage and protect "
-                "this group. Type /help to see "
-                "what I can do!"
+                "👋 Hello everyone! "
+                "Rosie here.\n"
+                "I'm ready to manage and "
+                "protect this group. "
+                "Type /help to see what I can do!"
             )
         )
 
@@ -1818,7 +1851,7 @@ async def start_group(
 
 
 # ============================================================
-# PRIVATE HELP
+# HELP PRIVATE
 # ============================================================
 
 @pbot.on_message(
@@ -1880,10 +1913,9 @@ async def help_private(
 
         is_cached = (
             'help' in _cmd_cache[uid]
-            and
-            (
-                ct -
-                _cmd_cache[uid]['help']
+            and (
+                ct
+                - _cmd_cache[uid]['help']
             ) < _cache_expiry
         )
 
@@ -1892,9 +1924,7 @@ async def help_private(
             _cmd_cache[uid]['help'] = ct
 
             join_source = (
-                await get_user_join_source(
-                    uid
-                )
+                await get_user_join_source(uid)
             )
 
             asyncio.create_task(
@@ -1906,13 +1936,15 @@ async def help_private(
             )
 
             asyncio.create_task(
-                add_user({
-                    'id': uid,
-                    'first_name': u.first_name,
-                    'last_name': u.last_name,
-                    'username': u.username,
-                    'is_bot': u.is_bot
-                })
+                add_user(
+                    {
+                        'id': uid,
+                        'first_name': u.first_name,
+                        'last_name': u.last_name,
+                        'username': u.username,
+                        'is_bot': u.is_bot
+                    }
+                )
             )
 
             if join_source in [
@@ -1952,7 +1984,8 @@ async def help_private(
             f"{font('For information about donations!')}\n"
             f"- /privacy : "
             f"{font('Learn how we protect your privacy.')}\n"
-            f"- {font('In a group: Get your group settings.')}"
+            f"- "
+            f"{font('In a group: Get your group settings.')}"
             f"</b></blockquote>\n"
             f"━━━━━━━━━━━━━━━━━━━"
         )
@@ -1982,7 +2015,7 @@ async def help_private(
 
 
 # ============================================================
-# GROUP HELP
+# HELP GROUP
 # ============================================================
 
 @pbot.on_message(
@@ -2009,20 +2042,23 @@ async def help_group(
 
         await message.reply_text(
             font(
-                "🧏 Check my all commands in private chat!"
+                "🧏 Check my all commands "
+                "in private chat!"
             ),
-            reply_markup=InlineKeyboardMarkup([
+            reply_markup=InlineKeyboardMarkup(
                 [
-                    InlineKeyboardButton(
-                        font("🆘 Commands"),
-                        url=(
-                            f"t.me/{BOT_UN}"
-                            f"?start=help"
-                        ),
-                        style=ButtonStyle.SUCCESS
-                    )
+                    [
+                        InlineKeyboardButton(
+                            font("🆘 Commands"),
+                            url=(
+                                f"t.me/{BOT_UN}"
+                                f"?start=help"
+                            ),
+                            style=ButtonStyle.SUCCESS
+                        )
+                    ]
                 ]
-            ])
+            )
         )
 
     except Exception as e:
@@ -2039,27 +2075,27 @@ async def help_group(
 PT = (
     "🗨️ **Privacy Policy:**\n\n"
     "We care about your privacy.\n\n"
-    "📥 **Data Collection:** "
+    "📥 **Data Collection:**\n"
     "We only collect your unique Telegram User ID, "
     "necessary for our bot to function properly.\n\n"
-    "🔎 **Data Use:** "
-    "We don't share your User ID with third-party "
-    "apps or services. Data is only used to support "
-    "bot features such as preferences, command usage, "
+    "🔎 **Data Use:**\n"
+    "We don't share your User ID with third-party apps "
+    "or services. Data is only used to support bot "
+    "features such as preferences, command usage, "
     "and permission checks.\n\n"
-    "🧾 **Logs & Storage:** "
+    "🧾 **Logs & Storage:**\n"
     "We may store minimal logs (timestamps and user IDs) "
     "for moderation and abuse prevention. Files you upload "
     "are not shared and can be deleted on request.\n\n"
-    "🙋 **Your Rights:** "
+    "🙋 **Your Rights:**\n"
     "You have the right to request access, correction, "
     "or deletion of your data. To request this, contact "
     "the support chat below or use bot commands if available.\n\n"
-    "🔒 **Security:** "
+    "🔒 **Security:**\n"
     "We take reasonable measures to protect data, but no "
     "system is 100% secure. Please avoid sending sensitive "
     "personal information.\n\n"
-    "🤷 **Changes to this Policy:** "
+    "🤷 **Changes to this Policy:**\n"
     "We may update this policy. By using our bot, you agree "
     "to this policy. If major changes are made, we will "
     "notify users in the update channel."
@@ -2067,10 +2103,9 @@ PT = (
 
 
 DT = (
-    f"🙏 **Thank you for considering donating to help "
-    f"keep this Bot alive and functioning!**\n\n"
-    f"⚫ You can also donate telegram stars using "
-    f"/pay command.\n\n"
+    "🙏 **Thank you for considering donating to help keep "
+    "this Bot alive and functioning!**\n\n"
+    "⚫ You can also donate telegram stars using /pay command.\n\n"
     f"🙋 Please reach out at {SUPPORT_CHAT}."
 )
 
@@ -2080,10 +2115,6 @@ ST = (
     f"Support for** {BOT_USERNAME}**.**"
 )
 
-
-# ============================================================
-# SUPPORT
-# ============================================================
 
 @pbot.on_message(
     filters.command(
@@ -2112,10 +2143,9 @@ async def support_cmd(
 
         is_cached = (
             'support' in _cmd_cache[uid]
-            and
-            (
-                ct -
-                _cmd_cache[uid]['support']
+            and (
+                ct
+                - _cmd_cache[uid]['support']
             ) < _cache_expiry
         )
 
@@ -2124,9 +2154,7 @@ async def support_cmd(
             _cmd_cache[uid]['support'] = ct
 
             join_source = (
-                await get_user_join_source(
-                    uid
-                )
+                await get_user_join_source(uid)
             )
 
             asyncio.create_task(
@@ -2138,13 +2166,15 @@ async def support_cmd(
             )
 
             asyncio.create_task(
-                add_user({
-                    'id': uid,
-                    'first_name': u.first_name,
-                    'last_name': u.last_name,
-                    'username': u.username,
-                    'is_bot': u.is_bot
-                })
+                add_user(
+                    {
+                        'id': uid,
+                        'first_name': u.first_name,
+                        'last_name': u.last_name,
+                        'username': u.username,
+                        'is_bot': u.is_bot
+                    }
+                )
             )
 
             if join_source in [
@@ -2169,10 +2199,6 @@ async def support_cmd(
             f"[SUPPORT_CMD ERROR] {e}"
         )
 
-
-# ============================================================
-# DONATE
-# ============================================================
 
 @pbot.on_message(
     filters.command(
@@ -2201,10 +2227,9 @@ async def donate_cmd(
 
         is_cached = (
             'donate' in _cmd_cache[uid]
-            and
-            (
-                ct -
-                _cmd_cache[uid]['donate']
+            and (
+                ct
+                - _cmd_cache[uid]['donate']
             ) < _cache_expiry
         )
 
@@ -2213,9 +2238,7 @@ async def donate_cmd(
             _cmd_cache[uid]['donate'] = ct
 
             join_source = (
-                await get_user_join_source(
-                    uid
-                )
+                await get_user_join_source(uid)
             )
 
             asyncio.create_task(
@@ -2227,13 +2250,15 @@ async def donate_cmd(
             )
 
             asyncio.create_task(
-                add_user({
-                    'id': uid,
-                    'first_name': u.first_name,
-                    'last_name': u.last_name,
-                    'username': u.username,
-                    'is_bot': u.is_bot
-                })
+                add_user(
+                    {
+                        'id': uid,
+                        'first_name': u.first_name,
+                        'last_name': u.last_name,
+                        'username': u.username,
+                        'is_bot': u.is_bot
+                    }
+                )
             )
 
             if join_source in [
@@ -2258,10 +2283,6 @@ async def donate_cmd(
             f"[DONATE_CMD ERROR] {e}"
         )
 
-
-# ============================================================
-# PRIVACY
-# ============================================================
 
 @pbot.on_message(
     filters.command(
@@ -2290,10 +2311,9 @@ async def privacy_cmd(
 
         is_cached = (
             'privacy' in _cmd_cache[uid]
-            and
-            (
-                ct -
-                _cmd_cache[uid]['privacy']
+            and (
+                ct
+                - _cmd_cache[uid]['privacy']
             ) < _cache_expiry
         )
 
@@ -2302,9 +2322,7 @@ async def privacy_cmd(
             _cmd_cache[uid]['privacy'] = ct
 
             join_source = (
-                await get_user_join_source(
-                    uid
-                )
+                await get_user_join_source(uid)
             )
 
             asyncio.create_task(
@@ -2316,13 +2334,15 @@ async def privacy_cmd(
             )
 
             asyncio.create_task(
-                add_user({
-                    'id': uid,
-                    'first_name': u.first_name,
-                    'last_name': u.last_name,
-                    'username': u.username,
-                    'is_bot': u.is_bot
-                })
+                add_user(
+                    {
+                        'id': uid,
+                        'first_name': u.first_name,
+                        'last_name': u.last_name,
+                        'username': u.username,
+                        'is_bot': u.is_bot
+                    }
+                )
             )
 
             if join_source in [
@@ -2345,4 +2365,4 @@ async def privacy_cmd(
 
         print(
             f"[PRIVACY_CMD ERROR] {e}"
-                )
+)
