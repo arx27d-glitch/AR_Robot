@@ -159,9 +159,23 @@ async def _download_start_image():
 
 def _get_start_font(size):
     """
-    Stylish font for username.
+    AR_Robot/f.ttf ko primary font ke roop me use karega.
     """
 
+    font_path = "AR_Robot/f.ttf"
+
+    if os.path.exists(font_path):
+        try:
+            return ImageFont.truetype(
+                font_path,
+                size
+            )
+        except Exception as e:
+            print(
+                f"[START FONT LOAD ERROR] {e}"
+            )
+
+    # Fallback fonts
     fonts = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -189,7 +203,10 @@ def _make_start_image(image_data, user_name):
     """
     START image par:
         Hello, USERNAME
-    add karta hai.
+
+    Font:
+        AR_Robot/f.ttf
+
     Username:
     - Transparent background
     - No rectangle
@@ -228,7 +245,6 @@ def _make_start_image(image_data, user_name):
 
         # ------------------------------------------------
         # Image 1536x864 ke hisaab se position
-        # Reference image ke according exact position
         # ------------------------------------------------
 
         hello_x = int(
@@ -241,39 +257,24 @@ def _make_start_image(image_data, user_name):
 
         # ------------------------------------------------
         # Font
+        # AR_Robot/f.ttf
         # ------------------------------------------------
 
         font_size = max(
-            32,
+            24,
             int(width * 0.025)
         )
 
-        hello_font_path = (
-            "/usr/share/fonts/truetype/dejavu/"
-            "DejaVuSans.ttf"
+        hello_font = _get_start_font(
+            font_size
         )
-
-        if os.path.exists(
-            hello_font_path
-        ):
-
-            hello_font = ImageFont.truetype(
-                hello_font_path,
-                font_size
-            )
-
-        else:
-
-            hello_font = _get_start_font(
-                font_size
-            )
 
         name_font = _get_start_font(
             font_size
         )
 
         # ------------------------------------------------
-        # Hello, ki width calculate (with space)
+        # Hello, ki width calculate
         # ------------------------------------------------
 
         hello_text = "Hello, "
@@ -290,7 +291,7 @@ def _make_start_image(image_data, user_name):
         )
 
         # ------------------------------------------------
-        # Username Hello, ke baad - EXACT POSITION
+        # Username Hello, ke baad
         # ------------------------------------------------
 
         username_x = (
@@ -301,7 +302,8 @@ def _make_start_image(image_data, user_name):
         username_y = hello_y
 
         # ------------------------------------------------
-        # Pehle "Hello, " draw karo (White Color)
+        # Hello, draw
+        # White color
         # ------------------------------------------------
 
         draw.text(
@@ -321,8 +323,11 @@ def _make_start_image(image_data, user_name):
         )
 
         # ------------------------------------------------
-        # Phir USERNAME draw karo (Purple/Pink Highlighted Color)
-        # No background / no box / no border
+        # Username draw
+        # Purple/Pink highlight
+        # No background
+        # No box
+        # No border
         # ------------------------------------------------
 
         draw.text(
@@ -2514,4 +2519,4 @@ async def privacy_cmd(
 
         print(
             f"[PRIVACY_CMD ERROR] {e}"
-)
+    )
