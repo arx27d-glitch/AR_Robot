@@ -40,7 +40,7 @@ LOG_GROUP_ID = int(getenv("LOG_GROUP_ID", "0"))
 
 SUPPORT_GROUP = getenv("SUPPORT_GROUP", "https://t.me/antidote_69")
 
-START_IMG_URL = getenv("START_IMG_URL", "https://litter.catbox.moe/yn5dtq.jpg")
+START_IMG_URL = getenv("START_IMG_URL", "https://litter.catbox.moe/3xtsry.jpg")
 
 
 SUPPORT_CHAT = getenv('SUPPORT_CHAT', 'EikoUpdates')
@@ -98,14 +98,14 @@ BTN_ROWS = int(getenv('BTN_ROWS', '6'))
 
 
 # some media source
-PM_START_IMG = getenv('START_IMG_URL', "https://litter.catbox.moe/yn5dtq.jpg")
+PM_START_IMG = getenv('START_IMG_URL', "https://litter.catbox.moe/3xtsry.jpg")
 
 HELP_CMD_IMG = getenv('HELP_CMD_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
 
 
 HELP_MODULE_IMG = getenv('HELP_MODULE_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
 
-START_IMG = getenv('START_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
+START_IMG = getenv('START_IMG', "https://litter.catbox.moe/3xtsry.jpg")
 
 
 FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
