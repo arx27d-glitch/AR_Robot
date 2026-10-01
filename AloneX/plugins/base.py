@@ -60,7 +60,6 @@ from AloneX.plugins.settings import handle_settings_deeplink
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
-
 _user_cache = {}
 _chat_cache = {}
 _rules_cache = {}
@@ -109,15 +108,11 @@ SE = (
 
 _SB = _bi = _tr = None
 
-
 _user_queue = asyncio.Queue()
 _processing_users = set()
 _last_process_time = defaultdict(float)
-
 _semaphore = asyncio.Semaphore(15000)
-
 _queue_processor_started = False
-
 _cmd_cache = defaultdict(dict)
 _cache_expiry = 3600
 
@@ -127,10 +122,6 @@ _cache_expiry = 3600
 # ============================================================
 
 async def _download_start_image():
-    """
-    START_IMG_URL se image download karta hai.
-    """
-
     url = getattr(config, "START_IMG_URL", None)
 
     if not url:
@@ -144,7 +135,6 @@ async def _download_start_image():
         timeout = aiohttp.ClientTimeout(total=25)
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-
             async with session.get(url) as response:
 
                 if response.status != 200:
@@ -169,19 +159,25 @@ async def _download_start_image():
 
 def _get_start_font(size):
     """
-    Server par available font use karega.
+    Stylish font for username.
     """
 
     fonts = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf",
         "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
     ]
 
     for path in fonts:
+
         if os.path.exists(path):
 
             try:
-                return ImageFont.truetype(path, size)
+                return ImageFont.truetype(
+                    path,
+                    size
+                )
 
             except Exception:
                 pass
@@ -191,10 +187,17 @@ def _get_start_font(size):
 
 def _make_start_image(image_data, user_name):
     """
-    Original START image par user ka naam add karta hai.
+    Original START image par:
 
-    IMPORTANT:
-    User name ke peeche koi solid rectangle/box nahi banaya gaya.
+        Hello, USERNAME
+
+    add karta hai.
+
+    Username:
+    - Transparent background
+    - No rectangle
+    - No box
+    - No border
     """
 
     try:
@@ -205,59 +208,134 @@ def _make_start_image(image_data, user_name):
 
         width, height = image.size
 
-        # ------------------------------------------------
-        # Image tumhari 1536x1024 design hai.
-        # Position automatic scale hogi.
-        # ------------------------------------------------
-
-        # "Hello," ke baad username
-        x = int(width * 0.655)
-        y = int(height * 0.375)
-
         user_name = str(
             user_name or "User"
         ).strip()
 
-        if len(user_name) > 20:
-            user_name = user_name[:20] + "…"
+        if len(user_name) > 18:
+            user_name = user_name[:18] + "…"
 
+        # ------------------------------------------------
         # Transparent overlay
+        # ------------------------------------------------
+
         overlay = Image.new(
             "RGBA",
             image.size,
             (0, 0, 0, 0)
         )
 
-        draw = ImageDraw.Draw(overlay)
+        draw = ImageDraw.Draw(
+            overlay
+        )
+
+        # ------------------------------------------------
+        # Image 1536x864 ke hisaab se position
+        # ------------------------------------------------
+
+        hello_x = int(
+            width * 0.652
+        )
+
+        hello_y = int(
+            height * 0.442
+        )
+
+        # ------------------------------------------------
+        # Font
+        # ------------------------------------------------
 
         font_size = max(
-            22,
-            int(width * 0.024)
+            24,
+            int(width * 0.025)
         )
+
+        hello_font_path = (
+            "/usr/share/fonts/truetype/dejavu/"
+            "DejaVuSans.ttf"
+        )
+
+        if os.path.exists(
+            hello_font_path
+        ):
+
+            hello_font = ImageFont.truetype(
+                hello_font_path,
+                font_size
+            )
+
+        else:
+
+            hello_font = _get_start_font(
+                font_size
+            )
 
         name_font = _get_start_font(
             font_size
         )
 
         # ------------------------------------------------
-        # NO BACKGROUND
-        # NO RECTANGLE
-        # NO BOX
-        # ONLY TEXT
+        # Hello, ki width calculate
+        # ------------------------------------------------
+
+        hello_text = "Hello,"
+
+        hello_box = draw.textbbox(
+            (0, 0),
+            hello_text,
+            font=hello_font
+        )
+
+        hello_width = (
+            hello_box[2]
+            - hello_box[0]
+        )
+
+        # ------------------------------------------------
+        # Username Hello, ke baad
+        # ------------------------------------------------
+
+        username_x = (
+            hello_x
+            + hello_width
+            + int(width * 0.012)
+        )
+
+        username_y = hello_y
+
+        # ------------------------------------------------
+        # ONLY USERNAME TEXT
+        # No background / no box
         # ------------------------------------------------
 
         draw.text(
-            (x, y),
+            (
+                username_x,
+                username_y
+            ),
             user_name,
             font=name_font,
-            fill=(235, 225, 255, 255),
+            fill=(
+                225,
+                195,
+                255,
+                255
+            ),
             stroke_width=0
         )
+
+        # ------------------------------------------------
+        # Merge
+        # ------------------------------------------------
 
         image = Image.alpha_composite(
             image,
             overlay
         )
+
+        # ------------------------------------------------
+        # Output
+        # ------------------------------------------------
 
         output = BytesIO()
 
@@ -273,6 +351,7 @@ def _make_start_image(image_data, user_name):
         return output
 
     except Exception as e:
+
         print(
             f"[START IMAGE CREATE ERROR] {e}"
         )
@@ -281,9 +360,6 @@ def _make_start_image(image_data, user_name):
 
 
 async def _get_dynamic_start_image(user):
-    """
-    User ke first_name ke saath personalized image.
-    """
 
     try:
 
@@ -391,9 +467,11 @@ async def _st():
     if not _bi:
 
         try:
+
             _bi = await pbot.get_me()
 
         except Exception as e:
+
             print(
                 f"[ST ERROR] {e}"
             )
@@ -493,10 +571,18 @@ async def _sp(
 
     try:
 
-        if isinstance(p, (list, tuple)):
+        if isinstance(
+            p,
+            (list, tuple)
+        ):
+
             p = p[0] if p else None
 
-        if isinstance(c, (list, tuple)):
+        if isinstance(
+            c,
+            (list, tuple)
+        ):
+
             c = c[0] if c else None
 
         # ------------------------------------------------
@@ -530,28 +616,22 @@ async def _sp(
 
             except TypeError:
 
-                try:
+                kw.pop(
+                    'message_effect_id',
+                    None
+                )
 
-                    kw.pop(
-                        'message_effect_id',
-                        None
-                    )
+                if eid:
+                    kw[
+                        'effect_id'
+                    ] = eid
 
-                    if eid:
-                        kw[
-                            'effect_id'
-                        ] = eid
-
-                    return await pbot.send_photo(
-                        **kw
-                    )
-
-                except Exception:
-                    raise
+                return await pbot.send_photo(
+                    **kw
+                )
 
         # ------------------------------------------------
         # BYTES / BYTESIO
-        # Dynamic image yahin se send hogi.
         # ------------------------------------------------
 
         elif isinstance(
@@ -565,7 +645,9 @@ async def _sp(
                 photo = BytesIO(p)
 
             elif isinstance(p, bytearray):
-                photo = BytesIO(bytes(p))
+                photo = BytesIO(
+                    bytes(p)
+                )
 
             if hasattr(photo, "seek"):
                 photo.seek(0)
@@ -649,7 +731,11 @@ async def _sp(
         await asyncio.sleep(
             min(
                 10,
-                getattr(e, "value", 1)
+                getattr(
+                    e,
+                    "value",
+                    1
+                )
             )
         )
 
@@ -672,7 +758,11 @@ async def _sp(
 
             return await pbot.send_message(
                 chat_id=cid,
-                text=c or "❌ Photo failed to send.",
+                text=(
+                    c
+                    or
+                    "❌ Photo failed to send."
+                ),
                 reply_markup=rm
             )
 
@@ -699,13 +789,18 @@ async def _sm(
             t,
             (list, tuple)
         ):
+
             t = (
                 str(t[0])
                 if t
                 else ""
             )
 
-        if not isinstance(t, str):
+        if not isinstance(
+            t,
+            str
+        ):
+
             t = str(t)
 
         if not t:
@@ -762,7 +857,11 @@ async def _sm(
         await asyncio.sleep(
             min(
                 10,
-                getattr(e, "value", 1)
+                getattr(
+                    e,
+                    "value",
+                    1
+                )
             )
         )
 
@@ -824,6 +923,7 @@ async def _gcn(cid):
 async def _cm(cid, uid):
 
     try:
+
         return await check_membership(
             cid,
             uid
@@ -841,6 +941,7 @@ async def _cm(cid, uid):
 def _db64(p):
 
     try:
+
         return base64.b64decode(
             p.encode()
         ).decode()
@@ -976,9 +1077,14 @@ async def _hgm(uid, p):
         me = mm.get(mt)
 
         if me:
-            await me(uid, m)
+
+            await me(
+                uid,
+                m
+            )
 
         else:
+
             await _sm(
                 uid,
                 "❌ Unsupported media type."
@@ -1059,7 +1165,10 @@ async def _hgf(uid, t, p):
                 fuid = getattr(
                     it[-1]
                     if at == "photo"
-                    and isinstance(it, list)
+                    and isinstance(
+                        it,
+                        list
+                    )
                     else it,
                     "file_unique_id",
                     None
@@ -1251,7 +1360,10 @@ async def _hh(uid, msg, u):
 
 async def _dl(msg):
 
-    a = msg.text.split(None, 1)
+    a = msg.text.split(
+        None,
+        1
+    )
 
     if len(a) < 2:
         return False
@@ -1263,12 +1375,14 @@ async def _dl(msg):
     try:
 
         if t.startswith('manage_'):
+
             return await handle_admin_deeplink(
                 msg,
                 t
             )
 
         if t.startswith('settings_'):
+
             return await handle_settings_deeplink(
                 msg,
                 t
@@ -1291,6 +1405,7 @@ async def _dl(msg):
         if t.startswith(
             ('music', 'sud', 'inf')
         ):
+
             return True
 
         if t.startswith("getmedia"):
@@ -1298,7 +1413,10 @@ async def _dl(msg):
             _, _, p = t.partition('-')
 
             return (
-                await _hgm(uid, p)
+                await _hgm(
+                    uid,
+                    p
+                )
                 if p
                 else False
             )
@@ -1363,7 +1481,9 @@ async def _bst(uid, u, cmd):
 
     try:
 
-        us = await get_user_join_source(uid)
+        us = await get_user_join_source(
+            uid
+        )
 
         w = datetime.now().strftime(
             '%Y-%m-%d %H:%M:%S'
@@ -1540,7 +1660,9 @@ async def _process_start_queue():
                 f"[QUEUE ERROR] {e}"
             )
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(
+                1
+            )
 
 
 async def _ensure_queue_processor():
@@ -1573,7 +1695,9 @@ async def _handle_start_private(
 
         if (
             message.text
-            and len(message.text.split()) > 1
+            and len(
+                message.text.split()
+            ) > 1
         ):
 
             if await _dl(message):
@@ -1596,7 +1720,9 @@ async def _handle_start_private(
             _cmd_cache[uid]['start'] = ct
 
             join_source = (
-                await get_user_join_source(uid)
+                await get_user_join_source(
+                    uid
+                )
             )
 
             asyncio.create_task(
@@ -1682,17 +1808,17 @@ async def _handle_start_private(
         )
 
         # ------------------------------------------------
-        # CREATE PERSONALIZED IMAGE
+        # PERSONALIZED START IMAGE
         # ------------------------------------------------
 
         start_image = (
-            await _get_dynamic_start_image(u)
+            await _get_dynamic_start_image(
+                u
+            )
         )
 
         if start_image:
 
-            # IMPORTANT:
-            # _sp ab BytesIO image accept karta hai.
             await _sp(
                 cid=message.chat.id,
                 p=start_image,
@@ -1703,8 +1829,6 @@ async def _handle_start_private(
 
         else:
 
-            # Agar image download/create fail ho
-            # to normal original image send hogi.
             await _sp(
                 cid=message.chat.id,
                 p=getattr(
@@ -1924,7 +2048,9 @@ async def help_private(
             _cmd_cache[uid]['help'] = ct
 
             join_source = (
-                await get_user_join_source(uid)
+                await get_user_join_source(
+                    uid
+                )
             )
 
             asyncio.create_task(
@@ -2154,7 +2280,9 @@ async def support_cmd(
             _cmd_cache[uid]['support'] = ct
 
             join_source = (
-                await get_user_join_source(uid)
+                await get_user_join_source(
+                    uid
+                )
             )
 
             asyncio.create_task(
@@ -2238,7 +2366,9 @@ async def donate_cmd(
             _cmd_cache[uid]['donate'] = ct
 
             join_source = (
-                await get_user_join_source(uid)
+                await get_user_join_source(
+                    uid
+                )
             )
 
             asyncio.create_task(
@@ -2322,7 +2452,9 @@ async def privacy_cmd(
             _cmd_cache[uid]['privacy'] = ct
 
             join_source = (
-                await get_user_join_source(uid)
+                await get_user_join_source(
+                    uid
+                )
             )
 
             asyncio.create_task(
