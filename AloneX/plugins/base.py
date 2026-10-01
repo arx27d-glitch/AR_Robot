@@ -244,7 +244,7 @@ def _make_start_image(image_data, user_name):
         # ------------------------------------------------
 
         font_size = max(
-            24,
+            32,
             int(width * 0.025)
         )
 
