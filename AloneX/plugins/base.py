@@ -187,12 +187,9 @@ def _get_start_font(size):
 
 def _make_start_image(image_data, user_name):
     """
-    Original START image par:
-
+    START image par:
         Hello, USERNAME
-
     add karta hai.
-
     Username:
     - Transparent background
     - No rectangle
@@ -231,6 +228,7 @@ def _make_start_image(image_data, user_name):
 
         # ------------------------------------------------
         # Image 1536x864 ke hisaab se position
+        # Reference image ke according exact position
         # ------------------------------------------------
 
         hello_x = int(
@@ -275,10 +273,10 @@ def _make_start_image(image_data, user_name):
         )
 
         # ------------------------------------------------
-        # Hello, ki width calculate
+        # Hello, ki width calculate (with space)
         # ------------------------------------------------
 
-        hello_text = "Hello,"
+        hello_text = "Hello, "
 
         hello_box = draw.textbbox(
             (0, 0),
@@ -292,20 +290,39 @@ def _make_start_image(image_data, user_name):
         )
 
         # ------------------------------------------------
-        # Username Hello, ke baad
+        # Username Hello, ke baad - EXACT POSITION
         # ------------------------------------------------
 
         username_x = (
             hello_x
             + hello_width
-            + int(width * 0.012)
         )
 
         username_y = hello_y
 
         # ------------------------------------------------
-        # ONLY USERNAME TEXT
-        # No background / no box
+        # Pehle "Hello, " draw karo (White Color)
+        # ------------------------------------------------
+
+        draw.text(
+            (
+                hello_x,
+                hello_y
+            ),
+            "Hello, ",
+            font=hello_font,
+            fill=(
+                255,
+                255,
+                255,
+                255
+            ),
+            stroke_width=0
+        )
+
+        # ------------------------------------------------
+        # Phir USERNAME draw karo (Purple/Pink Highlighted Color)
+        # No background / no box / no border
         # ------------------------------------------------
 
         draw.text(
