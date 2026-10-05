@@ -540,7 +540,7 @@ def _gsb(uid):
                     font("🎧 𝐌ᴜsɪᴄ"),
                     url=(
                         "https://t.me/"
-                        "AR_MUSIC_27BOT"
+                        "AR_MUSIC_69BOT"
                         "?start=help"
                     ),
                     style=ButtonStyle.PRIMARY
