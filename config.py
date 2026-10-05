@@ -40,7 +40,7 @@ LOG_GROUP_ID = int(getenv("LOG_GROUP_ID", "0"))
 
 SUPPORT_GROUP = getenv("SUPPORT_GROUP", "https://t.me/antidote_69")
 
-START_IMG_URL = getenv("START_IMG_URL", "https://litter.catbox.moe/3xtsry.jpg")
+START_IMG_URL = getenv("START_IMG_URL", "https://litter.catbox.moe/1jk7od.jpg")
 
 
 SUPPORT_CHAT = getenv('SUPPORT_CHAT', 'EikoUpdates')
@@ -56,7 +56,7 @@ else:
     LOGS_CHANNEL = None
 
 LOGGER_ID = int(getenv('LOGGER_ID', '0'))
-BOT_USERNAME = getenv('BOT_USERNAME', '@AR_X69BOT')
+BOT_USERNAME = getenv('BOT_USERNAME', '@arProGuardBot')
 BOT_NAME = getenv('BOT_NAME', '𖤍 ˹ ᴀʀ ꭙ ʙᴏᴛ ˼')
 IS_WEB_SUP = getenv('IS_WEB_SUP', 'True').lower() == 'true'
 
@@ -98,17 +98,17 @@ BTN_ROWS = int(getenv('BTN_ROWS', '6'))
 
 
 # some media source
-PM_START_IMG = getenv('START_IMG_URL', "https://litter.catbox.moe/3xtsry.jpg")
+PM_START_IMG = getenv('START_IMG_URL', "https://litter.catbox.moe/1jk7od.jpg")
 
-HELP_CMD_IMG = getenv('HELP_CMD_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
-
-
-HELP_MODULE_IMG = getenv('HELP_MODULE_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
-
-START_IMG = getenv('START_IMG', "https://litter.catbox.moe/3xtsry.jpg")
+HELP_CMD_IMG = getenv('HELP_CMD_IMG', "https://litter.catbox.moe/1jk7od.jpg")
 
 
-FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "https://litter.catbox.moe/yn5dtq.jpg")
+HELP_MODULE_IMG = getenv('HELP_MODULE_IMG', "https://litter.catbox.moe/1jk7od.jpg")
+
+START_IMG = getenv('START_IMG', "https://litter.catbox.moe/1jk7od.jpg")
+
+
+FORCE_JOIN_IMG = getenv('FORCE_JOIN_IMG', "https://litter.catbox.moe/1jk7od.jpg")
 
 AF_START_STICKERS = [
   "CAACAgUAAxkBAAEBrV9nWukpft8gmtrZVMkbO4GKlZy0HQACWxUAAnHv2FZkjr7WjG3OjzYE",
