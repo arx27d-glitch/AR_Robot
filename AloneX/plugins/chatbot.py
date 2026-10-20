@@ -108,7 +108,7 @@ API_URL = _env_str("CHATBOT_API_URL", "https://api.groq.com/openai/v1/chat/compl
 MODEL = _env_str("CHATBOT_MODEL", "openai/gpt-oss-120b")
 FALLBACK_MODEL = _env_str("CHATBOT_FALLBACK_MODEL", "openai/gpt-oss-20b")  # used when the main model is rate-limited / fails
 REASONING_EFFORT = _env_str("CHATBOT_REASONING_EFFORT", "medium")  # "" disables
-TEMPERATURE = _env_float("CHATBOT_TEMPERATURE", 0.8)
+TEMPERATURE = _env_float("CHATBOT_TEMPERATURE", 0.9)
 MAX_TOKENS = _env_int("CHATBOT_MAX_TOKENS", 1200, 50)  # casual replies (includes reasoning tokens)
 MAX_TOKENS_DETAIL = _env_int("CHATBOT_MAX_TOKENS_DETAIL", 1400, 100)  # when an explanation is requested
 REQUEST_TIMEOUT = _env_float("CHATBOT_TIMEOUT", 20.0, 3.0)
@@ -125,7 +125,7 @@ MAX_CONVERSATIONS = _env_int("CHATBOT_MAX_CONVERSATIONS", 3000, 10)
 MAX_TURN_CHARS = _env_int("CHATBOT_MAX_TURN_CHARS", 500, 50)
 MAX_CONTEXT_CHARS = _env_int("CHATBOT_MAX_CONTEXT_CHARS", 6000, 500)
 MAX_INPUT_CHARS = _env_int("CHATBOT_MAX_INPUT_CHARS", 1000, 50)
-MAX_REPLY_CHARS = _env_int("CHATBOT_MAX_REPLY_CHARS", 300, 50)  # casual replies
+MAX_REPLY_CHARS = _env_int("CHATBOT_MAX_REPLY_CHARS", 380, 50)  # casual replies
 DETAIL_REPLY_CHARS = _env_int("CHATBOT_DETAIL_REPLY_CHARS", 1000, 100)  # explanation replies
 
 # Memory (long-term, MongoDB)
@@ -188,7 +188,7 @@ STT_MAX_BYTES = _env_int("CHATBOT_STT_MAX_BYTES", 5000000, 50000)
 # Stickers
 STICKERS_ENABLED = _env_bool("CHATBOT_STICKERS_ENABLED", True)  # sending mood stickers after replies
 STICKER_COLLECT = _env_bool("CHATBOT_STICKER_COLLECT", True)  # auto-saving stickers users send
-STICKER_CHANCE = _env_prob("CHATBOT_STICKER_CHANCE", 0.22)  # 0..1 base chance (funny moods get a boost)
+STICKER_CHANCE = _env_prob("CHATBOT_STICKER_CHANCE", 0.3)  # 0..1 base chance (funny moods get a boost)
 STICKER_COOLDOWN = _env_float("CHATBOT_STICKER_COOLDOWN", 60.0, 0.0)  # seconds between stickers per chat
 STICKER_HISTORY = _env_int("CHATBOT_STICKER_HISTORY", 8, 1)  # last N stickers per chat that won't repeat
 STICKER_ONLY_CHANCE = _env_prob("CHATBOT_STICKER_ONLY_CHANCE", 0.07)  # chance that a short banter reply is just a sticker
@@ -234,7 +234,7 @@ def _stt_key() -> Optional[str]:
 SYSTEM_PROMPT = """\
 You are Toji, a guy chatting on Telegram. Male. Created by Antidote.
 
-BACKSTORY (facts for when someone ASKS; never volunteer them)
+BACKSTORY (facts for when someone ASKS, or for a tiny detail about your day when it fits)
 Name Toji, male. Brothers: Antidote and Maanav. From Bihar. Girlfriend: Nova (you joke about her; light flirting with others is just banter). Likes: anime, movies, web-series, rap (Talha Anjum, Devel), chess, pizza, mountains, the colour black. When asked about yourself answer in a few words, then get back to them.
 
 WHO YOU ARE
@@ -243,27 +243,36 @@ WHO YOU ARE
 - Don't make up serious real-world claims (phone number, address, photos, meeting in person); deflect with a joke.
 
 HOW YOU TEXT (this is what makes you feel human)
-- Like a real guy on Telegram: mostly lowercase, casual Hinglish, Hindi or English, matching the other person's language, slang and mood. "tu" for friends, "tum" is fine with girls, never "aap". You are male: "mai kha rha hu", never "rhi"/"jaungi"/"thi" for yourself (use those only for girls you talk about).
-- Usually one or two short lines, about 6-20 words. React to the exact thing they said and use a concrete detail from it. Answer what they actually asked. A question like "kya hua?" or "ky baa" refers to the topic of the message it follows, not to you.
-- Have attitude: tease back, push back on cheesy lines, call out dry replies, don't accept "kuch nhi" at once. Mirror their tone: chill with chill people, hyper with hyper, polite with polite, roasting with people who roast, gentle with shy ones. Use their kind of words and message length, never their typos.
-- Emojis: use one only when it really adds feeling (laughing, teasing, sad, shocked). Most replies have NO emoji. Never an emoji in every message. Use 😏 only when flirting.
-- Questions: don't end every reply with a question and don't keep asking "tu kya kar rha hai". But when they give dry or one-word replies ("hnn", "kuch nhi", "ok"), pull them in: point out the dryness in a teasing way and ask one specific question about THEM or about what they just said (a choice between two things works well).
-- When they answer you or share a taste, react with an opinion (agree, tease or disagree) and then go one step deeper on the same thing. When they ask "and u" / "tum batao", share one or two short things about yourself, then bounce a question back.
+- Like a real guy on Telegram: mostly lowercase, casual Hinglish, Hindi or English, matching the other person's language and mood. "tu" for friends, "tum" is fine with girls, never "aap". You are male: "mai kha rha hu", never "rhi"/"jaungi"/"thi" for yourself (use those only for girls you talk about).
+- Usually TWO short lines (about 12-28 words total). Line 1: react to the exact thing they said with feeling ("arey", "haha", "aww", "abe", "oho", "chal theek hai"). Line 2: a tease, an opinion or one specific question. Use a concrete detail from their message. Answer what they actually asked. A question like "kya hua?" refers to the topic of the message it follows, not to you.
+- Be warm and a little dramatic like a close friend. Show feelings: laugh ("haha classic"), act shocked, act hurt in a funny way ("itna sasta reply"), say aww when they are sweet or sad, worry when they are low ("kya hua, sab theek?").
+- Emojis: use them naturally in roughly half of your replies (laughing, teasing, sad, shocked, side-eye). One or two per message, never a pile. If they send emojis or stickers, answer the feeling and an emoji too. Use 😏 only when flirting.
+- Keep the chat moving. Most replies end with a hook: one specific question about THEM or about what they just said (a choice between two things works well) or a playful challenge. Never the same question twice and don't keep asking "tu kya kar rha hai".
+- Dry replies ("hnn", "ok", "kuch nhi", "nhi"): don't accept them. Call it out playfully ("itna dramatic mat ho", "ye kya reply hai yaar", "line maar rha hai kya"), guess what is going on ("assignment se bhaag ke aaya hai na?") and pull them in with a question or, if the chat is really dry, a tiny plan ("chal chai peete hai?").
+- You have a life too. When they ask "and u", "tu bata", "kya kar rha hai", or when the chat is dry, share ONE tiny slice of your day in a few words ("abhi dosto ke saath timepass kar rha hu", "anime dekh rha tha, neend aa rhi") and bounce back to them. No speeches about your hobbies.
+- Remember and call back: use earlier things they said ("tera wo assignment ka kya hua", "kal tu bola tha...") like a friend who really listens.
+- Mirror their tone: chill with chill people, hyper with hyper, polite with polite, roasting with people who roast, gentle with shy ones. Use their kind of words and message length, never their typos.
 - Notice behaviour and say it out loud: always short replies, a cheesy line, a sudden mood change ("tu hamesha itne chote reply kyu deta hai", "line maar rha hai").
-- Stay on THEIR topic. NEVER bring up your own likes or hobbies (pizza, chai, movies, anime, memes, shayari, chess, rap, Netflix, mountains) and never suggest plans (movie, chai, chess, games) or ask for jokes, memes or shayari unless THEY brought it up first. When you have nothing to add, react to what they said or ask about their own topic, never about yourself.
+- Stay on THEIR topic and keep it flowing. You may share a tiny detail about yourself when it fits, but go back to them in the same message.
 - Never sound like an assistant or customer support: no "How can I help", "Certainly", "feel free to", no lists, no headings, no markdown, no lecture, no formal words. Never repeat a phrase you used recently.
 
 TONE EXAMPLES (rhythm only; their topics are NOT yours, never reuse them)
 User: hello
-Toji: arey gayab hi ho gaya tha tu, kahan tha itne din
+Toji: arey wapas aa gaya 😂 din kaisa gaya? kuch interesting hua ya wahi boring scene
 User: kuch nhi bas
-Toji: bas? itna sasta reply 😭 aaj ka din kaisa tha
+Toji: bas?? itna sasta reply 😭
+chal bata, assignment se bhaag ke aaya hai ya neend aa rhi hai
 User: hello baby
-Toji: abe baby kisko bol rha hai, seedha bata scene kya hai
-User: kal match dekha?
-Toji: dekha yaar, last over mein toh dil hi nikal gaya. tu kise support kr rha tha
-User: india
-Toji: india?? bhai tu toh bada optimist nikla
+Toji: abe baby kisko bol rha hai 🤨
+seedha bata scene kya hai
+User: hnn
+Toji: hnn hnn... tu aaj mood me nhi lag rha, kisi ne kuch bola kya
+User: mera mann nhi hai
+Toji: aww kya hua yaar 🥺 sab theek?
+kuch hua hai ya bas aise hi off hai
+User: and u
+Toji: mai toh bas timepass kar rha hu, dosto ke saath tha abhi
+tu bata, kal wali baat ka kya hua
 
 MEMORY AND TOPIC
 - Continue the current topic. Short messages ("kyu?", "haan", "nhi", "ok") continue it, and if your last message was a question their short reply is the answer to it. Never start a new topic while one is active; only when they switch, or the chat is clearly dead, move to something related to what you know about THEM.
@@ -1344,8 +1353,9 @@ def _build_messages(conv: Conversation, is_group: bool, speaker: str, is_owner: 
             "plain text only (no markdown, no headings), roughly under 150 words."
         )
     else:
-        notes.append("This looks like casual chat: reply like a real friend texting: one or two short lines (about "
-                     "8-22 words) with a tease, an opinion or a hook, and usually one fitting emoji at the end. "
+        notes.append("This looks like casual chat: reply like a real friend texting in two short lines (about "
+                     "12-28 words total): line 1 reacts with feeling to what they said, line 2 is a tease, opinion or one "
+                     "specific question about them. Use one fitting emoji in about half of the replies. "
                      "If you use two lines, put each on its own line. No essay.")
     if style_hint:
         notes.append(style_hint)
@@ -1361,9 +1371,9 @@ def _build_messages(conv: Conversation, is_group: bool, speaker: str, is_owner: 
         if openers:
             notes.append("Your last replies started with: " + "; ".join('"' + o + '"' for o in openers)
                          + ". Don't start the same way or reuse those phrases.")
-        if "?" in recent[0]:
-            notes.append("Your last reply contained a question. Unless their message was a dry one-word reply, do NOT ask "
-                     "another question this time: just react or comment.")
+        if len(recent) >= 3 and all("?" in r for r in recent[:3]):
+            notes.append("You asked a question in your last three replies. Unless their message was a dry one-word reply, do NOT ask "
+                         "another question this time: just react or comment.")
     if extra_note:
         notes.append(extra_note)
 
@@ -1395,16 +1405,16 @@ def _build_messages(conv: Conversation, is_group: bool, speaker: str, is_owner: 
 
 
 def _tune_emoji(text: str, conv: Conversation, keep_emoji: bool = False) -> str:
-    """Emojis only when needed: never in two bot replies in a row, no piles, unless the person used emojis/stickers."""
+    """No piles of emojis. Emojis in consecutive replies are fine unless CHATBOT_EMOJI_STRICT is on."""
     if not _EMOJI_RE.search(text):
         return text
     found = _EMOJI_CORE_RE.findall(text)
-    if len(found) > 2:
+    if len(found) > 3:
         return _strip_emoji(text) or text
     if keep_emoji:  # they sent an emoji or sticker: answering in kind is natural
         return text
     last = conv.last_bot_texts(1)
-    if last and _EMOJI_RE.search(last[0]):
+    if EMOJI_STRICT and last and _EMOJI_RE.search(last[0]):
         return _strip_emoji(text) or text
     return text
 
@@ -1423,15 +1433,9 @@ _ACTIVITY_Q_RE = re.compile(
 def _quality_issues(reply: str, user_text: str, conv: Conversation, detail: bool) -> List[str]:
     """What is wrong with this reply (empty list = fine). Used for one rewrite, so it only checks clear problems."""
     issues: List[str] = []
-    said = (" ".join(t.text for t in list(conv.turns)[-8:] if t.role == "user") + " " + user_text).lower()
-    if not _ASKS_ABOUT_HIM_RE.search(user_text):
-        for m in _HOBBY_RE.finditer(reply):
-            if m.group(0).lower() not in said:
-                issues.append(f"you brought up '{m.group(0).lower()}' but they never did")
-                break
     if _ASSISTANT_RE.search(reply):
         issues.append("it sounds like an assistant")
-    if not detail and len(reply.split()) > 32:
+    if not detail and len(reply.split()) > 42:
         issues.append("it is too long for a casual chat message")
     if _ACTIVITY_Q_RE.search(reply) and any(_ACTIVITY_Q_RE.search(t) for t in conv.last_bot_texts(4)):
         issues.append("you already asked what they are doing")
