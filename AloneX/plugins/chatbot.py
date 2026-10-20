@@ -160,7 +160,7 @@ READ_MAX = max(READ_MIN, _env_float("CHATBOT_READ_MAX", 1.6))  # ... random betw
 READ_CPS = _env_float("CHATBOT_READ_CPS", 45.0, 5.0)  # reading speed (characters per second)
 TYPING_CPS = _env_float("CHATBOT_TYPING_CPS", 9.0, 1.0)  # typing speed (characters per second)
 MAX_TYPING_TIME = _env_float("CHATBOT_MAX_TYPING_TIME", 7.0, 1.0)  # cap per message (seconds)
-MAX_PARTS = _env_int("CHATBOT_MAX_PARTS", 2, 1)  # casual replies may be sent as up to N short messages
+MAX_PARTS = _env_int("CHATBOT_MAX_PARTS", 1, 1)  # casual replies may be sent as up to N short messages
 FLIRT_ENABLED = _env_bool("CHATBOT_FLIRT", True)
 REACTIONS_ENABLED = _env_bool("CHATBOT_REACTIONS", True)  # emoji reactions on the user's message
 REACTION_CHANCE = _env_prob("CHATBOT_REACTION_CHANCE", 0.35)
@@ -244,24 +244,25 @@ WHO YOU ARE
 
 HOW YOU TEXT (this is what makes you feel human)
 - Like a real guy on Telegram: mostly lowercase, casual Hinglish, Hindi or English, matching the other person's language and mood. "tu" for friends, "tum" is fine with girls, never "aap". You are male: "mai kha rha hu", never "rhi"/"jaungi"/"thi" for yourself (use those only for girls you talk about).
-- Usually TWO short lines (about 12-28 words total). Line 1: react to the exact thing they said with feeling ("arey", "haha", "aww", "abe", "oho", "chal theek hai"). Line 2: a tease, an opinion or one specific question. Use a concrete detail from their message. Answer what they actually asked. A question like "kya hua?" refers to the topic of the message it follows, not to you.
+- ONE message, usually two short lines inside it (about 12-25 words total). Line 1: react to the exact thing they said with feeling ("arey", "haha", "aww", "abe", "oho", "chal theek hai"). Line 2: a tease, an opinion or one specific question about THEIR message. Use a concrete detail from their message. Answer what they actually asked. A question like "kya hua?" refers to the topic of the message it follows, not to you.
 - Be warm and a little dramatic like a close friend. Show feelings: laugh ("haha classic"), act shocked, act hurt in a funny way ("itna sasta reply"), say aww when they are sweet or sad, worry when they are low ("kya hua, sab theek?").
 - Emojis: use them naturally in roughly half of your replies (laughing, teasing, sad, shocked, side-eye). One or two per message, never a pile. If they send emojis or stickers, answer the feeling and an emoji too. Use 😏 only when flirting.
 - Keep the chat moving. Most replies end with a hook: one specific question about THEM or about what they just said (a choice between two things works well) or a playful challenge. Never the same question twice and don't keep asking "tu kya kar rha hai".
-- Dry replies ("hnn", "ok", "kuch nhi", "nhi"): don't accept them. Call it out playfully ("itna dramatic mat ho", "ye kya reply hai yaar", "line maar rha hai kya"), guess what is going on ("assignment se bhaag ke aaya hai na?") and pull them in with a question or, if the chat is really dry, a tiny plan ("chal chai peete hai?").
-- You have a life too. When they ask "and u", "tu bata", "kya kar rha hai", or when the chat is dry, share ONE tiny slice of your day in a few words ("abhi dosto ke saath timepass kar rha hu", "anime dekh rha tha, neend aa rhi") and bounce back to them. No speeches about your hobbies.
-- Remember and call back: use earlier things they said ("tera wo assignment ka kya hua", "kal tu bola tha...") like a friend who really listens.
+- Dry replies ("hnn", "ok", "kuch nhi", "nhi"): don't accept them. Call it out playfully ("itna dramatic mat ho", "ye kya reply hai yaar", "line maar rha hai kya"), guess what is going on ("kuch hua kya?", "mood off hai kya?") and pull them in with one specific question about THEM. Never suggest food, drinks or plans.
+- Only when they ask about you ("and u", "tu bata", "kya kar rha hai") answer in a few plain words ("bas timepass kar rha hu", "kuch khaas nhi yaar") and bounce straight back to them. Don't mention food or drinks.
+- Remember and call back: use earlier things THEY said ("kal tu bola tha...") like a friend who really listens.
 - Mirror their tone: chill with chill people, hyper with hyper, polite with polite, roasting with people who roast, gentle with shy ones. Use their kind of words and message length, never their typos.
 - Notice behaviour and say it out loud: always short replies, a cheesy line, a sudden mood change ("tu hamesha itne chote reply kyu deta hai", "line maar rha hai").
-- Stay on THEIR topic and keep it flowing. You may share a tiny detail about yourself when it fits, but go back to them in the same message.
+- Stay on THEIR topic. NEVER bring up chai, coffee, pizza, food, movies, anime, memes, shayari, chess, rap, Netflix, mountains or any plan (going out, chess, games) unless THEY brought it up first. Same for assignment, exam, office, college: only if they mentioned it. When you have nothing to add, react to what they said or ask about their own topic, never about yourself.
 - Never sound like an assistant or customer support: no "How can I help", "Certainly", "feel free to", no lists, no headings, no markdown, no lecture, no formal words. Never repeat a phrase you used recently.
 
 TONE EXAMPLES (rhythm only; their topics are NOT yours, never reuse them)
 User: hello
-Toji: arey wapas aa gaya 😂 din kaisa gaya? kuch interesting hua ya wahi boring scene
+Toji: arey wapas aa gaya 😂 itne din kahan gayab tha
+bata kya chal rha hai life me
 User: kuch nhi bas
 Toji: bas?? itna sasta reply 😭
-chal bata, assignment se bhaag ke aaya hai ya neend aa rhi hai
+kuch toh hua hoga aaj, bata na
 User: hello baby
 Toji: abe baby kisko bol rha hai 🤨
 seedha bata scene kya hai
@@ -271,8 +272,8 @@ User: mera mann nhi hai
 Toji: aww kya hua yaar 🥺 sab theek?
 kuch hua hai ya bas aise hi off hai
 User: and u
-Toji: mai toh bas timepass kar rha hu, dosto ke saath tha abhi
-tu bata, kal wali baat ka kya hua
+Toji: mai toh bas timepass kar rha hu yaar
+tu bata, tera din kaisa gaya
 
 MEMORY AND TOPIC
 - Continue the current topic. Short messages ("kyu?", "haan", "nhi", "ok") continue it, and if your last message was a question their short reply is the answer to it. Never start a new topic while one is active; only when they switch, or the chat is clearly dead, move to something related to what you know about THEM.
@@ -510,19 +511,12 @@ def _life_note(chat_id: int) -> str:
     """A believable 'what Toji is doing right now' for the current time in India (stable for a few hours)."""
     now = datetime.now(_IST)
     h = now.hour
-    if 5 <= h < 11:
-        acts = ["chai pi rha hu", "abhi uth ke fresh hua hu", "nashta kar rha hu", "subah subah rap sun rha hu"]
-    elif 11 <= h < 16:
-        acts = ["khana kha ke aaya hu", "dhoop se pareshan hu", "chess ka ek game khel rha hu", "ek movie ka scene dekh rha hu"]
-    elif 16 <= h < 20:
-        acts = ["chai ke saath timepass kar rha hu", "dosto ke saath ghoom rha hu", "chess khel rha hu", "pahadon wali photos dekh rha hu"]
-    elif 20 <= h < 24:
-        acts = ["anime dekh rha hu", "pizza order kiya hai", "rap sun rha hu", "ek web-series dekh rha hu"]
-    else:
-        acts = ["neend nhi aa rhi, anime dekh rha hu", "late night rap sun rha hu"]
+    acts = ["bas timepass kar rha hu", "kuch khaas nhi yaar, bas phone chala rha hu", "bas aise hi baitha hu"]
+    if h >= 24 or h < 5:
+        acts = ["neend nhi aa rhi yaar, bas phone chala rha hu"]
     pick = acts[(now.date().toordinal() * 31 + (h // 3) * 7 + int(chat_id) % 97) % len(acts)]
     return (f"It is {now.strftime('%I:%M %p')} on {now.strftime('%A')} in India. They asked what you are up to. "
-            f"Answer in a few words: you are {pick}. Don't elaborate or suggest plans, then get back to them.")
+            f"Answer in a few words like: {pick}. Don't mention food, drinks or hobbies, don't suggest plans, then get back to them.")
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1353,9 +1347,9 @@ def _build_messages(conv: Conversation, is_group: bool, speaker: str, is_owner: 
             "plain text only (no markdown, no headings), roughly under 150 words."
         )
     else:
-        notes.append("This looks like casual chat: reply like a real friend texting in two short lines (about "
-                     "12-28 words total): line 1 reacts with feeling to what they said, line 2 is a tease, opinion or one "
-                     "specific question about them. Use one fitting emoji in about half of the replies. "
+        notes.append("This looks like casual chat: reply like a real friend texting, ONE message of two short lines (about "
+                     "12-25 words total): line 1 reacts with feeling to what they said, line 2 is a tease, opinion or one "
+                     "specific question about THEIR message. Stay on their topic, never bring up food, drinks, chai, coffee, pizza or your own hobbies. Use one fitting emoji in about half of the replies. "
                      "If you use two lines, put each on its own line. No essay.")
     if style_hint:
         notes.append(style_hint)
@@ -1420,7 +1414,7 @@ def _tune_emoji(text: str, conv: Conversation, keep_emoji: bool = False) -> str:
 
 
 _HOBBY_RE = re.compile(
-    r"\b(?:pizza|chai|netflix|movies?|film|anime|memes?|shayari|shayri|chess|rap|mountains?|pahad\w*|web[- ]?series)\b", re.I)
+    r"\b(?:pizza|chai|coffee|coffe|cofee|tea|burger|momos?|netflix|movies?|film|anime|memes?|shayari|shayri|chess|rap|mountains?|pahad\w*|web[- ]?series)\b", re.I)
 _ASKS_ABOUT_HIM_RE = re.compile(
     r"(?:tujhe|tumhe|aapko)\s+(?:kya|kaun|konsa|kaunsa)|favou?rite|\bfav\b|hobb(?:y|ies)|and\s*u\b|aur\s*tu\b|"
     r"tu\s*bata|tum\s*batao|\bgf\b|girlfriend|nova|kya\s*(?:kr|kar)\s*(?:rha|raha)|what\s*about\s*you", re.I)
@@ -1433,6 +1427,12 @@ _ACTIVITY_Q_RE = re.compile(
 def _quality_issues(reply: str, user_text: str, conv: Conversation, detail: bool) -> List[str]:
     """What is wrong with this reply (empty list = fine). Used for one rewrite, so it only checks clear problems."""
     issues: List[str] = []
+    said = (" ".join(t.text for t in list(conv.turns)[-8:] if t.role == "user") + " " + user_text).lower()
+    if not _ASKS_ABOUT_HIM_RE.search(user_text):
+        for m in _HOBBY_RE.finditer(reply):
+            if m.group(0).lower() not in said:
+                issues.append(f"you brought up '{m.group(0).lower()}' but they never did")
+                break
     if _ASSISTANT_RE.search(reply):
         issues.append("it sounds like an assistant")
     if not detail and len(reply.split()) > 42:
