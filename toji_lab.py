@@ -54,9 +54,10 @@ def build_system(prompt: str, name: str, girl: bool) -> str:
         "This is a PRIVATE chat with one person.",
         f"Reply to {name}'s latest message.",
         f"{name} is NOT your owner.",
-        "This looks like casual chat: reply like a real friend texting in two short lines (about 12-28 words "
+        "This looks like casual chat: reply like a real friend texting, ONE message of two short lines (about 12-25 words "
         "total): line 1 reacts with feeling to what they said, line 2 is a tease, opinion or one specific "
-        "question about them. Use one fitting emoji in about half of the replies. "
+        "question about THEIR message. Stay on their topic, never bring up food, drinks, chai, coffee, pizza or your own hobbies. "
+        "Use one fitting emoji in about half of the replies. "
         "If you use two lines, put each on its own line. No essay.",
     ]
     if girl:
