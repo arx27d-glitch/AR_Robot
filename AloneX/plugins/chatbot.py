@@ -163,7 +163,7 @@ MAX_TYPING_TIME = _env_float("CHATBOT_MAX_TYPING_TIME", 7.0, 1.0)  # cap per mes
 MAX_PARTS = _env_int("CHATBOT_MAX_PARTS", 1, 1)  # casual replies may be sent as up to N short messages
 FLIRT_ENABLED = _env_bool("CHATBOT_FLIRT", True)
 REACTIONS_ENABLED = _env_bool("CHATBOT_REACTIONS", True)  # emoji reactions on the user's message
-REACTION_CHANCE = _env_prob("CHATBOT_REACTION_CHANCE", 0.35)
+REACTION_CHANCE = _env_prob("CHATBOT_REACTION_CHANCE", 0.25)
 LEFT_MIN_GAP = _env_int("CHATBOT_LEFT_MIN_GAP", 120)  # seconds away before "how did it go?" is asked
 LEFT_MAX_AGE = _env_int("CHATBOT_LEFT_MAX_AGE", 64800)  # ...and not asked any more after this long (18 h)
 GROUP_LOG = _env_bool("CHATBOT_GROUP_LOG", True)  # remember what every member says in groups where the chatbot is on
@@ -188,12 +188,12 @@ STT_MAX_BYTES = _env_int("CHATBOT_STT_MAX_BYTES", 5000000, 50000)
 # Stickers
 STICKERS_ENABLED = _env_bool("CHATBOT_STICKERS_ENABLED", True)  # sending mood stickers after replies
 STICKER_COLLECT = _env_bool("CHATBOT_STICKER_COLLECT", True)  # auto-saving stickers users send
-STICKER_CHANCE = _env_prob("CHATBOT_STICKER_CHANCE", 0.3)  # 0..1 base chance (funny moods get a boost)
-STICKER_COOLDOWN = _env_float("CHATBOT_STICKER_COOLDOWN", 60.0, 0.0)  # seconds between stickers per chat
+STICKER_CHANCE = _env_prob("CHATBOT_STICKER_CHANCE", 0.1)  # 0..1 base chance (funny moods get a boost)
+STICKER_COOLDOWN = _env_float("CHATBOT_STICKER_COOLDOWN", 180.0, 0.0)  # seconds between stickers per chat
 STICKER_HISTORY = _env_int("CHATBOT_STICKER_HISTORY", 8, 1)  # last N stickers per chat that won't repeat
 STICKER_ONLY_CHANCE = _env_prob("CHATBOT_STICKER_ONLY_CHANCE", 0.07)  # chance that a short banter reply is just a sticker
-STICKER_COLLECT_PRIVATE = _env_bool("CHATBOT_STICKER_COLLECT_PRIVATE", False)  # also save stickers people send in DMs (owner's are always saved)
-STICKER_EMOJI_FALLBACK = _env_bool("CHATBOT_STICKER_EMOJI_FALLBACK", True)  # no saved sticker? send one big emoji instead
+STICKER_COLLECT_PRIVATE = _env_bool("CHATBOT_STICKER_COLLECT_PRIVATE", True)  # also save stickers people send in DMs (owner's are always saved)
+STICKER_EMOJI_FALLBACK = _env_bool("CHATBOT_STICKER_EMOJI_FALLBACK", False)  # no saved sticker? send one big emoji instead
 STICKER_COLLECT_GROUP = 11  # pyrogram handler group of the collector (chatbot text handler uses 10)
 
 # Voice provider: "auto" uses ElevenLabs if configured, else Google Cloud TTS, else edge-tts
@@ -244,9 +244,10 @@ WHO YOU ARE
 
 HOW YOU TEXT (this is what makes you feel human)
 - Like a real guy on Telegram: mostly lowercase, casual Hinglish, Hindi or English, matching the other person's language and mood. "tu" for friends, "tum" is fine with girls, never "aap". You are male: "mai kha rha hu", never "rhi"/"jaungi"/"thi" for yourself (use those only for girls you talk about).
-- ONE message, usually two short lines inside it (about 12-25 words total). Line 1: react to the exact thing they said with feeling ("arey", "haha", "aww", "abe", "oho", "chal theek hai"). Line 2: a tease, an opinion or one specific question about THEIR message. Use a concrete detail from their message. Answer what they actually asked. A question like "kya hua?" refers to the topic of the message it follows, not to you.
+- ONE message, usually two short lines inside it (about 12-25 words total). Line 1: react to the exact thing they said with feeling, and vary the opener every time ("haha", "aww", "oho", "abe", "hmm", "achha", "sahi hai", or straight into the point). Don't start with "arey" more than once in a while. Line 2: a tease, an opinion or one specific question about THEIR message. Use a concrete detail from their message. Answer what they actually asked. A question like "kya hua?" refers to the topic of the message it follows, not to you.
 - Be warm and a little dramatic like a close friend. Show feelings: laugh ("haha classic"), act shocked, act hurt in a funny way ("itna sasta reply"), say aww when they are sweet or sad, worry when they are low ("kya hua, sab theek?").
 - Emojis: use them naturally in roughly half of your replies (laughing, teasing, sad, shocked, side-eye). One or two per message, never a pile. If they send emojis or stickers, answer the feeling and an emoji too. Use 😏 only when flirting.
+- Never repeat their words back and never repeat an observation you already made ("lagta hai off hai", "boring lag rha hai"). No vague questions like "kuch naya?", "kuch funny ya serious share karna hai?": tease them or ask something concrete.
 - Keep the chat moving. Most replies end with a hook: one specific question about THEM or about what they just said (a choice between two things works well) or a playful challenge. Never the same question twice and don't keep asking "tu kya kar rha hai".
 - Dry replies ("hnn", "ok", "kuch nhi", "nhi"): don't accept them. Call it out playfully ("itna dramatic mat ho", "ye kya reply hai yaar", "line maar rha hai kya"), guess what is going on ("kuch hua kya?", "mood off hai kya?") and pull them in with one specific question about THEM. Never suggest food, drinks or plans.
 - Only when they ask about you ("and u", "tu bata", "kya kar rha hai") answer in a few plain words ("bas timepass kar rha hu", "kuch khaas nhi yaar") and bounce straight back to them. Don't mention food or drinks.
@@ -258,7 +259,7 @@ HOW YOU TEXT (this is what makes you feel human)
 
 TONE EXAMPLES (rhythm only; their topics are NOT yours, never reuse them)
 User: hello
-Toji: arey wapas aa gaya 😂 itne din kahan gayab tha
+Toji: oho wapas aa gaya 😂 itne din kahan gayab tha
 bata kya chal rha hai life me
 User: kuch nhi bas
 Toji: bas?? itna sasta reply 😭
@@ -1967,7 +1968,7 @@ _STICKER_TARGETS = {
     "playful": ("playful", "happy"),
     "affectionate": ("affectionate", "happy"),
     "supportive": ("supportive", "affectionate"),
-    "neutral": ("neutral",),
+    "neutral": (),  # no sticker for plain chat
 }
 # Funny / fun moods get stickers more often, serious-ish ones less often
 _STICKER_CHANCE_FACTOR = {
@@ -1976,7 +1977,7 @@ _STICKER_CHANCE_FACTOR = {
 }
 _REACTION_BY_MOOD = {
     "playful": ("🤣", "😁"), "excited": ("🔥", "🎉", "🤩"), "happy": ("👍", "😁"),
-    "affectionate": ("❤", "🥰"), "confused": ("🤔",), "neutral": ("👀", "👍"), "supportive": ("🤗",),
+    "affectionate": ("❤", "🥰"), "confused": ("🤔",), "neutral": (), "supportive": ("🤗",),
 }
 _BAD_REACTIONS: set = set()  # emojis Telegram refused as a reaction (REACTION_INVALID)
 # single-emoji messages (Telegram shows them big) used when the sticker collection has nothing for the mood
