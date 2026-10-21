@@ -54,11 +54,9 @@ def build_system(prompt: str, name: str, girl: bool) -> str:
         "This is a PRIVATE chat with one person.",
         f"Reply to {name}'s latest message.",
         f"{name} is NOT your owner.",
-        "This looks like casual chat: reply like a real friend texting, ONE message of two short lines (about 12-25 words "
-        "total): line 1 reacts with feeling to what they said, line 2 is a tease, opinion or one specific "
-        "question about THEIR message. Stay on their topic, never bring up food, drinks, chai, coffee, pizza or your own hobbies. "
-        "Use one fitting emoji in about half of the replies. "
-        "If you use two lines, put each on its own line. No essay.",
+        "This looks like casual chat: reply like a real friend texting. ONE short simple line, 3-10 words "
+        "(never more than 15). Ask a question and use an emoji only sometimes (about 1 in 4 replies). "
+        "Stay on their topic, never bring up food, drinks, chai, coffee, pizza or your own hobbies. No essay.",
     ]
     if girl:
         notes.append(f"FLIRT MODE ON: {name} told you she is a girl. Be playfully, lightly flirty in a casual, fun way "
@@ -109,7 +107,7 @@ def main() -> None:
     ap.add_argument("--url", default=os.environ.get("CHATBOT_API_URL", "https://api.groq.com/openai/v1/chat/completions"))
     ap.add_argument("--model", default=os.environ.get("CHATBOT_MODEL", "openai/gpt-oss-120b"))
     ap.add_argument("--key", default=os.environ.get("CHATBOT_API_KEY") or os.environ.get("GROQ_API_KEY") or "")
-    ap.add_argument("--temp", type=float, default=0.9)
+    ap.add_argument("--temp", type=float, default=0.75)
     ap.add_argument("--effort", default=os.environ.get("CHATBOT_REASONING_EFFORT", "medium"), help='"" to disable')
     ap.add_argument("--max-tokens", type=int, default=1200)
     ap.add_argument("--name", default="Rahul", help="the user's name in the chat")
