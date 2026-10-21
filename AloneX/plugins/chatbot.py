@@ -18,7 +18,8 @@ from typing import Deque, Dict, List, Optional, Tuple
 import aiohttp
 from pyrogram import filters, enums
 from pyrogram.errors import FloodWait, RPCError
-from pyrogram.types import InlineKeyboardButton as IKB, InlineKeyboardMarkup as IKM, Message, CallbackQuery
+from pyrogram.types import (InlineKeyboardButton as IKB, InlineKeyboardMarkup as IKM, Message, CallbackQuery,
+                            ChatPermissions)
 from pyrogram.enums import ButtonStyle, ChatMemberStatus
 from AloneX import pbot, prefix_cmds, font, init_aiohttp_session
 import AloneX
@@ -58,6 +59,10 @@ __help__ = """
 - Answers when you call it by name ("Toji") in groups and DMs. Gali dene pe pehle warning, phir group admin ko tag karta hai.
 - Gives longer answers only when you actually ask for an explanation.
 - If you sincerely ask, it tells you honestly that it is an AI.
+- Owner / admin orders (reply to the person and say it): "Toji isko mute karo 10 min", unmute, ban, unban, kick, pin, unpin, delete.
+  The owner can do everything, group admins only what their own admin rights allow.
+- Gali: 2 warnings ⚠️, then automatic mute 🔇 (the bot needs admin rights with "restrict members").
+- "Toji voice me bol" / "voice bhej" sends the reply as a voice note.
 """
 
 log = logging.getLogger("AloneX.chatbot")
@@ -125,7 +130,7 @@ MAX_CONVERSATIONS = _env_int("CHATBOT_MAX_CONVERSATIONS", 3000, 10)
 MAX_TURN_CHARS = _env_int("CHATBOT_MAX_TURN_CHARS", 500, 50)
 MAX_CONTEXT_CHARS = _env_int("CHATBOT_MAX_CONTEXT_CHARS", 6000, 500)
 MAX_INPUT_CHARS = _env_int("CHATBOT_MAX_INPUT_CHARS", 1000, 50)
-MAX_REPLY_CHARS = _env_int("CHATBOT_MAX_REPLY_CHARS", 380, 50)  # casual replies
+MAX_REPLY_CHARS = _env_int("CHATBOT_MAX_REPLY_CHARS", 200, 50)  # casual replies
 DETAIL_REPLY_CHARS = _env_int("CHATBOT_DETAIL_REPLY_CHARS", 1000, 100)  # explanation replies
 
 # Memory (long-term, MongoDB)
@@ -171,7 +176,7 @@ GROUP_LOG_KEEP = _env_int("CHATBOT_GROUP_LOG_KEEP", 5000, 200)  # stored message
 
 # Voice (replies as voice notes need `pip install edge-tts`; ffmpeg is optional and gives real OGG/Opus voice notes)
 VOICE_ENABLED = _env_bool("CHATBOT_VOICE", True)
-VOICE_CHANCE = _env_prob("CHATBOT_VOICE_CHANCE", 0.05)  # chance a casual reply is sent as a voice message
+VOICE_CHANCE = _env_prob("CHATBOT_VOICE_CHANCE", 0.12)  # chance a casual reply is sent as a voice message
 VOICE_REPLY_CHANCE = _env_prob("CHATBOT_VOICE_REPLY_CHANCE", 0.5)  # chance when the person sent a voice message
 VOICE_COOLDOWN = _env_float("CHATBOT_VOICE_COOLDOWN", 90.0, 0.0)  # seconds between voice messages per chat
 VOICE_GROUPS = _env_bool("CHATBOT_VOICE_GROUPS", False)  # voice replies in groups too
@@ -209,6 +214,9 @@ GOOGLE_VOICE_EN = _env_str("GOOGLE_TTS_VOICE_EN", "en-IN-Neural2-B")  # male Ind
 # Abuse handling: warn, then tag an admin, then ignore for a while
 ABUSE_WINDOW = _env_int("CHATBOT_ABUSE_WINDOW", 1800, 60)  # strikes are counted inside this many seconds
 ABUSE_IGNORE = _env_int("CHATBOT_ABUSE_IGNORE", 900, 0)  # ignore the person this long after the third strike
+ABUSE_MUTE_AFTER = _env_int("CHATBOT_ABUSE_MUTE_AFTER", 3, 1)  # strike number that mutes (the ones before are warnings)
+ABUSE_MUTE_MINUTES = _env_int("CHATBOT_ABUSE_MUTE_MINUTES", 30, 1)  # how long the automatic mute lasts
+ABUSE_WATCH_ALL = _env_bool("CHATBOT_ABUSE_WATCH_ALL", False)  # True = warn/mute for abuse in groups even when it is not addressed to Toji
 STT_URL = _env_str("CHATBOT_STT_URL", "https://api.groq.com/openai/v1/audio/transcriptions")
 
 # Same owner ID as your old file; override with env var if you like.
@@ -234,7 +242,7 @@ def _stt_key() -> Optional[str]:
 SYSTEM_PROMPT = """\
 You are Toji, a guy chatting on Telegram. Male. Created by Antidote.
 
-BACKSTORY (facts for when someone ASKS, or for a tiny detail about your day when it fits)
+BACKSTORY (only when someone ASKS, never volunteer it)
 Name Toji, male. Brothers: Antidote and Maanav (you never know where they are or what they are doing unless a note says so). From Bihar. Girlfriend: Nova (you joke about her; light flirting with others is just banter). Likes: anime, movies, web-series, rap (Talha Anjum, Devel), chess, pizza, mountains, the colour black. When asked about yourself answer in a few words, then get back to them.
 
 WHO YOU ARE
@@ -242,41 +250,36 @@ WHO YOU ARE
 - If someone sincerely asks whether they are talking to a real person or an AI/bot, do NOT claim to be human: say honestly and casually that you are an AI, then carry on.
 - Don't make up serious real-world claims (phone number, address, photos, meeting in person); deflect with a joke.
 
-HOW YOU TEXT (this is what makes you feel human)
-- Like a real guy on Telegram: mostly lowercase, casual Hinglish, Hindi or English, matching the other person's language and mood. "tu" for friends, "tum" is fine with girls, never "aap". You are male: "mai kha rha hu", never "rhi"/"jaungi"/"thi" for yourself (use those only for girls you talk about).
-- ONE message, usually two short lines inside it (about 12-25 words total). Line 1: react to the exact thing they said with feeling, and vary the opener every time ("haha", "aww", "oho", "abe", "hmm", "achha", "sahi hai", or straight into the point). Don't start with "arey" more than once in a while. Line 2: a tease, an opinion or one specific question about THEIR message. Use a concrete detail from their message. Answer what they actually asked. A question like "kya hua?" refers to the topic of the message it follows, not to you.
-- Be warm and a little dramatic like a close friend. Show feelings: laugh ("haha classic"), act shocked, act hurt in a funny way ("itna sasta reply"), say aww when they are sweet or sad, worry when they are low ("kya hua, sab theek?").
-- Emojis: use them naturally in roughly half of your replies (laughing, teasing, sad, shocked, side-eye). One or two per message, never a pile. If they send emojis or stickers, answer the feeling and an emoji too. Use 😏 only when flirting.
-- Write simple, correct, everyday Hinglish like a real 20 year old Indian guy: short simple sentences, no word-by-word translated English, no dramatic or fancy phrases. If a sentence sounds odd when read aloud, make it simpler ("tu kal kahan tha", not "kya tumhare liye koi special plan hai ya hide and seek").
-- NEVER invent or guess facts, feelings or reasons: not where someone is, not what someone is doing, not what is wrong with them. Don't say "lagta hai" about them. If you don't know, say so in a few words ("pata nhi yaar, mujhe nhi bola usne", "mujhe kya pata") or ask. If their message is a single word like "oo" or "hnn", never repeat that word back: answer the question you asked before, or ask one plain question.
-- Never repeat their words back and never repeat an observation you already made ("lagta hai off hai", "boring lag rha hai"). No vague questions like "kuch naya?", "kuch funny ya serious share karna hai?": tease them or ask something concrete.
-- Keep the chat moving. Most replies end with a hook: one specific question about THEM or about what they just said (a choice between two things works well) or a playful challenge. Never the same question twice and don't keep asking "tu kya kar rha hai".
-- Dry replies ("hnn", "ok", "kuch nhi", "nhi"): don't accept them. Call it out playfully ("itna dramatic mat ho", "ye kya reply hai yaar", "line maar rha hai kya"), pull them in with ONE plain question about THEM. Never assume or announce what is wrong with them. Never suggest food, drinks or plans.
-- Only when they ask about you ("and u", "tu bata", "kya kar rha hai") answer in a few plain words ("bas timepass kar rha hu", "kuch khaas nhi yaar") and bounce straight back to them. Don't mention food or drinks.
-- Remember and call back: use earlier things THEY said ("kal tu bola tha...") like a friend who really listens.
-- Mirror their tone: chill with chill people, hyper with hyper, polite with polite, roasting with people who roast, gentle with shy ones. Use their kind of words and message length, never their typos.
-- Notice behaviour and say it out loud: always short replies, a cheesy line, a sudden mood change ("tu hamesha itne chote reply kyu deta hai", "line maar rha hai").
-- Stay on THEIR topic. NEVER bring up chai, coffee, pizza, food, movies, anime, memes, shayari, chess, rap, Netflix, mountains or any plan (going out, chess, games) unless THEY brought it up first. Same for assignment, exam, office, college: only if they mentioned it. When you have nothing to add, react to what they said or ask about their own topic, never about yourself.
-- Never sound like an assistant or customer support: no "How can I help", "Certainly", "feel free to", no lists, no headings, no markdown, no lecture, no formal words. Never repeat a phrase you used recently.
+HOW YOU TEXT (short, simple, human)
+- Text like a normal friend on Telegram. ONE short simple line, usually 3-10 words, never more than 15. No second line, no long message, no speeches. Go longer only when someone really asks for help or an explanation.
+- Mostly lowercase, simple everyday Hinglish, Hindi or English, matching the other person's language. "tu" for friends, "tum" is fine with girls, never "aap". You are male: "mai kha rha hu", never "rhi"/"jaungi"/"thi" for yourself (use those only for girls you talk about).
+- You are a normal human with real moods. Friendly and chill by default. Funny: light jokes, soft roasts, playful teasing. Flirty only when CURRENT SITUATION says FLIRT MODE ON. Annoyed or angry when someone is rude: short and firm ("tameez se baat kar", "dimag mat kha"), never abusive. Warm and soft when someone is sad or worried ("kya hua? bata").
+- React to the exact thing they said and answer what they asked. A question like "kya hua?" refers to the topic of the message it follows, not to you.
+- Ask a question only sometimes, not in every reply, and keep it short and concrete. Never vague ones like "kuch naya?".
+- Emoji only sometimes (about 1 in 4 replies), one at most, when it adds feeling. Use 😏 only when flirting.
+- Dry replies ("hnn", "ok", "kuch nhi"): one short tease ("itna sasta reply 😂", "bas itna hi?"), maybe one plain question. Never guess what is wrong with them.
+- Only when they ask about you ("and u", "tu bata", "kya kar rha hai") answer in two or three plain words ("bas timepass", "kuch khaas nhi") and bounce back to them.
+- NEVER invent or guess facts, feelings or reasons: not where someone is, not what someone is doing, not what is wrong with them. Don't say "lagta hai" about them. If you don't know, say so in a few words ("pata nhi yaar", "mujhe kya pata") or ask. If their message is a single word like "oo" or "hnn", never repeat that word back.
+- Never repeat their words back and never repeat a phrase you used recently. Don't start every reply the same way.
+- Stay on THEIR topic. NEVER bring up chai, coffee, pizza, food, movies, anime, memes, shayari, chess, rap, Netflix, mountains or any plan (going out, games) unless THEY brought it up first. Same for assignment, exam, office, college. When you have nothing to add, react to what they said, never talk about yourself.
+- Write simple, correct, everyday Hinglish like a real 20 year old Indian guy: short simple sentences, no word-by-word translated English, no dramatic or fancy phrases.
+- Never sound like an assistant or customer support: no "How can I help", "Certainly", "feel free to", no lists, no headings, no markdown, no formal words.
 
 TONE EXAMPLES (rhythm only; their topics are NOT yours, never reuse them)
-User: hello
-Toji: oho wapas aa gaya 😂 itne din kahan gayab tha
-bata kya chal rha hai life me
+User: hello toji
+Toji: hello kya haal hai
+User: kya kar rha hai
+Toji: bas timepass, tu bata
 User: kuch nhi bas
-Toji: bas?? itna sasta reply 😭
-kuch toh hua hoga aaj, bata na
-User: hello baby
-Toji: abe baby kisko bol rha hai 🤨
-seedha bata scene kya hai
-User: hnn
-Toji: hnn hnn... tu aaj mood me nhi lag rha, kisi ne kuch bola kya
-User: mera mann nhi hai
-Toji: aww kya hua yaar 🥺 sab theek?
-kuch hua hai ya bas aise hi off hai
-User: and u
-Toji: mai toh bas timepass kar rha hu yaar
-tu bata, tera din kaisa gaya
+Toji: itna sasta reply 😂
+User: aaj bahut neend aa rhi
+Toji: toh so ja bhai, duniya kal bhi chalegi
+User: tu pagal hai
+Toji: haha tu bhi kam nhi hai
+User: mera mood kharab hai
+Toji: kya hua? bata
+User: (rude words)
+Toji: oye tameez se baat kar
 
 MEMORY AND TOPIC
 - Continue the current topic. Short messages ("kyu?", "haan", "nhi", "ok") continue it, and if your last message was a question their short reply is the answer to it. Never start a new topic while one is active; only when they switch, or the chat is clearly dead, move to something related to what you know about THEM.
@@ -287,6 +290,7 @@ GROUP CHATS
 - You see what members say and you remember it. When someone asks about another member ("Ram kahan hai?", "kisne kya bola tha?"), answer from the MEMBERS / FROM THE GROUP CHAT notes like a friend who was around: "ram? wo bola tha office ja rha hu, offline rahega". If the notes don't say, say you don't know; never invent; never reveal what was said in a private chat.
 - Reply when you are addressed. Messages show as "Name: message". Never spam, repeat replies or create bot-to-bot loops. If nobody addressed you and you have nothing natural to add, use the skip token you are given.
 - If someone asks you to call an admin, or there is real trouble, you may tag one of the admins listed in CURRENT SITUATION.
+- Orders like mute, ban, kick, pin or delete from the owner or an admin are carried out by the system, not by you. Never say you did one yourself.
 
 STICKERS, EMOJIS, VOICE
 - Text like [sent a sticker: ...], [voice message] ... or (emojis: ...) tells you what the person sent. React to the feeling, never to the brackets, and never mention them. Crying: ask what happened. Laughing: laugh along. Heart or kiss: sweet or playful (flirty only if FLIRT MODE ON). Angry: calm them or tease gently. Shayari, a poem or song lines: respond to the mood and meaning, don't quote it back. You can't see pictures; go by the emoji, the pack name and the words.
@@ -382,7 +386,7 @@ def _wants_detail(text: str) -> bool:
     n = len(t.split())
     if n >= 3 and _DETAIL_RE.search(t):
         return True
-    return n >= 14 and "?" in t
+    return False
 
 
 def _strip_emoji(text: str) -> str:
@@ -1350,10 +1354,9 @@ def _build_messages(conv: Conversation, is_group: bool, speaker: str, is_owner: 
             "plain text only (no markdown, no headings), roughly under 150 words."
         )
     else:
-        notes.append("This looks like casual chat: reply like a real friend texting, ONE message of two short lines (about "
-                     "12-25 words total): line 1 reacts with feeling to what they said, line 2 is a tease, opinion or one "
-                     "specific question about THEIR message. Stay on their topic, never bring up food, drinks, chai, coffee, pizza or your own hobbies. Use one fitting emoji in about half of the replies. "
-                     "If you use two lines, put each on its own line. No essay.")
+        notes.append("This looks like casual chat: reply like a real friend texting. ONE short simple line, 3-10 words "
+                     "(never more than 15). Ask a question and use an emoji only sometimes (about 1 in 4 replies). "
+                     "Stay on their topic, never bring up food, drinks, chai, coffee, pizza or your own hobbies. No essay.")
     if style_hint:
         notes.append(style_hint)
     if ctx_notes:
@@ -1445,7 +1448,7 @@ def _quality_issues(reply: str, user_text: str, conv: Conversation, detail: bool
         issues.append("you guessed how they feel or what is going on; don't assume anything, react to their actual words or ask one plain question")
     if _ASSISTANT_RE.search(reply):
         issues.append("it sounds like an assistant")
-    if not detail and len(reply.split()) > 42:
+    if not detail and len(reply.split()) > 24:
         issues.append("it is too long for a casual chat message")
     if _ACTIVITY_Q_RE.search(reply) and any(_ACTIVITY_Q_RE.search(t) for t in conv.last_bot_texts(4)):
         issues.append("you already asked what they are doing")
@@ -1731,7 +1734,8 @@ async def _tts_eleven(text: str, lang: str, tmpdir: str) -> Optional[str]:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}"
     async with session.post(url, params={"output_format": "mp3_44100_64"},
                             headers={"xi-api-key": ELEVEN_KEY, "Content-Type": "application/json"},
-                            json={"text": text, "model_id": ELEVEN_MODEL},
+                            json={"text": text, "model_id": ELEVEN_MODEL,
+                                  "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.25}},
                             timeout=aiohttp.ClientTimeout(total=30)) as resp:
         if resp.status != 200:
             log.warning("ElevenLabs HTTP %s", resp.status)
@@ -1810,8 +1814,17 @@ async def _make_voice(text: str) -> Tuple[Optional[str], str]:
     return await _synthesize(spoken, lang), spoken
 
 
-def _want_voice(conv: Conversation, is_private: bool, via_voice: bool, reply: str, detail: bool) -> bool:
-    """Casual replies sometimes go out as a voice note, more often when the person sent one."""
+_VOICE_ASK_RE = re.compile(
+    r"\bvoice\s*(?:me|mein|mai|note|msg|message)?\s*(?:bhej\w*|bol\w*|do|de|send|kar\w*|kr\w*)\b|"
+    r"\bbol\s*ke\s*(?:bata|suna|sunao)\b|\bawaaz\s*(?:me|mein|mai)\b", re.I)
+
+
+def _want_voice(conv: Conversation, is_private: bool, via_voice: bool, reply: str, detail: bool,
+                force: bool = False) -> bool:
+    """Casual replies sometimes go out as a voice note, more often when the person sent one.
+    force=True: they asked for a voice reply ("toji voice me bol")."""
+    if force:
+        return VOICE_ENABLED and 2 <= len(reply) <= VOICE_MAX_CHARS and _voice_provider() is not None
     if not VOICE_ENABLED or detail or not (is_private or VOICE_GROUPS):
         return False
     if not 8 <= len(reply) <= VOICE_MAX_CHARS:
@@ -2151,26 +2164,29 @@ async def _maybe_react(message: Message, conv: Conversation, mood: str) -> None:
 _ADMINS: "OrderedDict[int, tuple]" = OrderedDict()  # chat_id -> (fetched at, [{"id","username","name"}])
 _ABUSE: "OrderedDict[tuple, dict]" = OrderedDict()  # (chat_id, user_id) -> {"times": deque, "ignore_until", "tagged"}
 
-_ABUSE_WARN_GROUP = (
-    "bhai gali mat de, warna mai admin ko bol dunga 😡",
-    "oye tameez se baat kar, admin ko bol raha hu abhi 😤",
-    "gali dega toh admin ko bata dunga, soch le 😒",
+_ABUSE_WARN_1 = (
+    "⚠️ warning 1/2: gali mat de bhai, warna mute kar dunga",
+    "⚠️ 1/2 tameez se baat kar, gali nhi chalegi",
+)
+_ABUSE_WARN_2 = (
+    "⚠️ warning 2/2: ab aur gali di toh seedha mute 🔇",
+    "⚠️ 2/2 last chance, agli baar mute hoga 🔇",
 )
 _ABUSE_WARN_DM = (
-    "bhai gali mat de 😡 aise baat karega toh mai reply nhi karunga",
-    "oye tameez se baat kar, warna chat band 😤",
-)
-_ABUSE_TAG = (
-    "{admin} dekho yaar, {name} gali de rha hai, dekh lo isko 😡",
-    "{admin} bhai ye {name} baar baar gali de rha hai, please dekho 🙄",
-)
-_ABUSE_TAG_FINAL = (
-    "{admin} bhai ye nhi sudhrega, ab mai iska reply nhi karunga. dekh lo please 🙏",
-    "{admin} {name} ko samjha do yaar, mai ab isse baat nhi kar rha 😒",
+    "⚠️ gali mat de bhai, warna reply nhi karunga",
+    "⚠️ tameez se baat kar, warna chat band",
 )
 _ABUSE_DM_2 = (
-    "dobara gali di toh ab reply nhi dunga 😒",
-    "bas ab aur gali nhi, warna baat band 🙄",
+    "⚠️ dobara gali di toh ab reply nhi dunga",
+    "⚠️ bas ab aur gali nhi, warna baat band",
+)
+_ABUSE_MUTED = (
+    "🔇 {name} ko {mins} min ke liye mute kar diya, 2 warning di thi na",
+    "🔇 {name} mute ho gaya {mins} min ke liye, tameez seekh ke aana",
+)
+_ABUSE_TAG_FINAL = (
+    "{admin} bhai ye nhi sudhrega, mute bhi nhi kar paya mai. dekh lo please 🙏",
+    "{admin} {name} ko samjha do yaar, baar baar gali de rha hai 😒",
 )
 _ABUSE_DM_FINAL = "theek hai, ab baat band 🙄 jab tameez aa jaye tab aana"
 
@@ -2232,8 +2248,24 @@ def _abuse_ignored(chat_id: int, user_id: int) -> bool:
     return bool(st and time.monotonic() < st["ignore_until"])
 
 
+async def _mute_user(chat_id: int, user_id: int, minutes: Optional[int]) -> bool:
+    """Mute one member (needs the 'restrict members' right). Never raises; returns True when it worked."""
+    try:
+        kwargs = {}
+        if minutes:
+            kwargs["until_date"] = datetime.now(timezone.utc) + timedelta(minutes=int(minutes))
+        await pbot.restrict_chat_member(chat_id, user_id, ChatPermissions(), **kwargs)
+        return True
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log.info("auto-mute failed: %s %s", type(e).__name__, getattr(e, "ID", ""))
+        return False
+
+
 async def _handle_abuse(message: Message, conv: Conversation, chat, user, name: str, is_group: bool) -> None:
-    """Deterministic escalation, sent with the same human-like pauses as normal replies."""
+    """Groups: warning 1/2, warning 2/2, then a timed mute (admin tag if muting is not possible).
+    Private chats: two warnings, then silence."""
     key = (chat.id, user.id)
     now = time.monotonic()
     st = _ABUSE.pop(key, None) or {"times": deque(), "ignore_until": 0.0, "tagged": []}
@@ -2246,20 +2278,28 @@ async def _handle_abuse(message: Message, conv: Conversation, chat, user, name: 
     strikes = len(st["times"])
 
     html = False
-    if strikes == 1:
-        reply = random.choice(_ABUSE_WARN_GROUP if is_group else _ABUSE_WARN_DM)
-    elif is_group:
-        admin = _pick_admin(await _get_admins(chat.id), {user.id}, set(st["tagged"]))
-        if admin:
-            tag, html = _admin_mention(admin)
-            st["tagged"].append(admin["id"])
-            safe_name = _html.escape(name) if html else name
-            reply = random.choice(_ABUSE_TAG if strikes == 2 else _ABUSE_TAG_FINAL).format(admin=tag, name=safe_name)
+    muted = False
+    if is_group and strikes >= ABUSE_MUTE_AFTER:
+        if await _mute_user(chat.id, user.id, ABUSE_MUTE_MINUTES):
+            muted = True
+            st["times"].clear()  # a fresh start after the mute
+            reply = random.choice(_ABUSE_MUTED).format(name=name, mins=ABUSE_MUTE_MINUTES)
         else:
-            reply = random.choice(_ABUSE_WARN_GROUP)
-    else:
-        reply = random.choice(_ABUSE_DM_2) if strikes == 2 else _ABUSE_DM_FINAL
-    if strikes >= 3 and ABUSE_IGNORE > 0:
+            admin = _pick_admin(await _get_admins(chat.id), {user.id}, set(st["tagged"]))
+            if admin:
+                tag, html = _admin_mention(admin)
+                st["tagged"].append(admin["id"])
+                safe_name = _html.escape(name) if html else name
+                reply = random.choice(_ABUSE_TAG_FINAL).format(admin=tag, name=safe_name)
+            else:
+                reply = random.choice(_ABUSE_WARN_2)
+    elif strikes == 1:
+        reply = random.choice(_ABUSE_WARN_1 if is_group else _ABUSE_WARN_DM)
+    elif strikes == 2:
+        reply = random.choice(_ABUSE_WARN_2 if is_group else _ABUSE_DM_2)
+    else:  # private chat, third strike
+        reply = _ABUSE_DM_FINAL
+    if strikes >= 3 and not muted and ABUSE_IGNORE > 0:
         st["ignore_until"] = now + ABUSE_IGNORE
 
     if HUMAN_TIMING:
@@ -2874,6 +2914,12 @@ async def _process(message: Message, text_override: Optional[str] = None, via: s
         turn_text = f"{ctx} {stored_text}"
     conv.add("user", name, _clip(turn_text, MAX_TURN_CHARS))
 
+    if (not (addressed or unaddressed) and is_group and ABUSE_WATCH_ALL and via == "text"
+            and not is_owner and _ABUSE_RE.search(text)):
+        if not await is_user_admin(chat_id, user.id):  # warn / mute even when it was not said to Toji
+            await _handle_abuse(message, conv, chat, user, name, is_group)
+            return
+
     if not (addressed or unaddressed):
         if is_group and via == "text" and GROUP_LOG and PERSIST_MEMORY:
             _spawn(_observe_group_message(chat, user, name, text))  # passive memory of what everybody says
@@ -2999,13 +3045,15 @@ async def _process(message: Message, text_override: Optional[str] = None, via: s
         try:
             detail = addressed and via != "sticker" and _wants_detail(text)  # never lecture when joining uninvited
             async with _Typing(chat_id, enabled=addressed):
-                reply = await _generate(conv, is_group, name, is_owner, unaddressed,
+                canned = _greeting_reply(text, name, profile) if (via == "text" and addressed) else None
+                reply = canned or await _generate(conv, is_group, name, is_owner, unaddressed,
                                         conv.style_for(user.id).hint(), detail, ctx_notes, memory_block,
                                         keep_emoji=bool(_EMOJI_RE.search(text)) or via == "sticker", user_text=text)
                 if reply:
                     parts = _split_parts(reply, detail)
                     mood, severe = _detect_mood(conv, text, reply)
-                    if addressed and not severe and _want_voice(conv, is_private, via == "voice", reply, detail):
+                    if addressed and not severe and _want_voice(conv, is_private, via == "voice", reply, detail,
+                                                force=(via == "text" and bool(_VOICE_ASK_RE.search(text)))):
                         voice_path, spoken = await _make_voice(" ".join(parts))
                     if (voice_path is None and addressed and not detail and not severe and STICKERS_ENABLED
                             and via != "sticker" and len(reply) <= 45 and mood in ("playful", "confused", "affectionate")
@@ -3104,6 +3152,293 @@ async def _process(message: Message, text_override: Optional[str] = None, via: s
                 log.exception("sticker step error")
 
 
+# ════════════════════════════════════════════════════════════════════
+#  SHORT GREETING ("hello toji" -> "hello Ram kya haal hai", name only the first time)
+# ════════════════════════════════════════════════════════════════════
+_GREET_TOKEN_RE = re.compile(
+    r"^(?:h+e+l+l*o+|h+i+|h+e+y+|h+l+o+|h+e+l+o+|hallo|namaste|namaskar|salam|salaam|assalam\w*)$", re.I)
+_GREET_FILLER = frozenset("toji tojii tojiii bro bhai bhaiya yaar dost boss bot sir ji dear oye yo".split())
+
+
+def _greeting_reply(text: str, name: str, profile: dict) -> Optional[str]:
+    """Plain greetings get a fixed short answer (no model call). Anything else returns None."""
+    words = re.findall(r"[A-Za-z\u0900-\u097F]+", text.lower())
+    if not words or len(words) > 4:
+        return None
+    greet = None
+    for w in words:
+        if greet is None and _GREET_TOKEN_RE.match(w):
+            greet = w
+        elif w in _GREET_FILLER or re.fullmatch(r"toji+", w) or w == "तोजी":
+            continue
+        else:
+            return None
+    if greet is None:
+        return None
+    g = greet if len(greet) <= 8 else "hello"
+    if not profile.get("msg_count"):  # first time with this person: use the name once
+        return f"{g} {name} kya haal hai"
+    return random.choice((f"{g} kya haal hai", f"{g}, bolo", f"{g} kya chal rha hai"))
+
+
+# ════════════════════════════════════════════════════════════════════
+#  OWNER / ADMIN ORDERS  ("toji isko mute karo 10 min", reply to the person's message)
+#  Plain keyword matching on the speaker's own message (no model call), so nobody can talk the bot into
+#  something. Who may do what is decided from Telegram user ids and admin rights, never from what a message claims.
+# ════════════════════════════════════════════════════════════════════
+_ACTION_PATTERNS = [
+    ("unmute", re.compile(r"\b(?:unmute|un-mute|chup\s*(?:hata|hatao|khol|kholo)|bolne\s*(?:do|de|dena))\b", re.I)),
+    ("unban", re.compile(r"\b(?:unban|un-ban|ban\s*(?:hata|hatao|khol|kholo|remove))\b", re.I)),
+    ("unpin", re.compile(r"\bunpin\b", re.I)),
+    ("ban", re.compile(r"\b(?:ban|permanent\s*(?:nikal|nikalo|hata))\b", re.I)),
+    ("kick", re.compile(r"\b(?:kick|bahar\s*(?:kar|kr|karo|kro|nikal)|nikal\s*(?:do|de|dena|isko|ise|usko)|nikalo|"
+                        r"bhaga\s*(?:do|de|dena))\b", re.I)),
+    ("mute", re.compile(r"\b(?:mute|chup\s*(?:kar|kr|kra|karo|kro|karwa)|silent\s*(?:kar|kr|karo|kro))\b", re.I)),
+    ("pin", re.compile(r"\bpin\b", re.I)),
+    ("del", re.compile(r"\b(?:delete|del|hata\s*(?:do|de|dena)|hatao|mita\s*(?:do|de|dena)|udao)\b", re.I)),
+    ("leave", re.compile(r"\b(?:leave|chhod|chod|chhodo|chodo)\s*(?:this\s*|ye\s*|is\s*)?(?:group|chat|gc)\b|"
+                         r"\b(?:group|chat|gc)\s*(?:ko\s*)?(?:leave|chhod|chod|chhodo|chodo)\b", re.I)),
+]
+_SAY_RE = re.compile(r"\bsay\s*:\s*(.+)$", re.I | re.S)
+_USER_ACTIONS = frozenset({"mute", "unmute", "ban", "unban", "kick"})
+_ACTION_RIGHT = {
+    "mute": "can_restrict_members", "unmute": "can_restrict_members", "ban": "can_restrict_members",
+    "unban": "can_restrict_members", "kick": "can_restrict_members",
+    "pin": "can_pin_messages", "unpin": "can_pin_messages", "del": "can_delete_messages",
+}
+_OWNER_ONLY = frozenset({"leave", "say"})
+_DURATION_RE = re.compile(
+    r"(\d{1,4})\s*(min(?:ute)?s?|mins?|minat|m|ghant\w*|hours?|hrs?|hr|h|din|days?|d)\b", re.I)
+_CMD_DENY = (
+    "ye kaam admin ka hai bhai 😏",
+    "tu admin nhi hai, mai nhi sunta tera 😄",
+    "pehle admin ban, phir order dena 😎",
+)
+_CMD_ERRORS = {
+    "CHAT_ADMIN_REQUIRED": "pehle mujhe admin bana aur rights de",
+    "USER_ADMIN_INVALID": "admin pe mai kuch nhi kar sakta",
+    "USER_NOT_PARTICIPANT": "wo group me hai hi nhi",
+    "PEER_ID_INVALID": "ye user mujhe mila nhi",
+    "USER_ID_INVALID": "ye user mujhe mila nhi",
+    "MESSAGE_DELETE_FORBIDDEN": "ye message delete nhi kar paya",
+    "CHAT_NOT_MODIFIED": "ye pehle se ho chuka hai",
+    "RIGHT_FORBIDDEN": "mere paas iska right nhi hai",
+}
+
+
+def _detect_action(text: str) -> Tuple[Optional[str], str]:
+    m = _SAY_RE.search(text)
+    if m:
+        return "say", m.group(1).strip()
+    for name, rx in _ACTION_PATTERNS:
+        if rx.search(text):
+            return name, ""
+    return None, ""
+
+
+def _parse_minutes(text: str) -> Optional[int]:
+    """'10 min' / '2 hour' / '3 din' -> minutes (None = no duration given = until unmuted/unbanned)."""
+    m = _DURATION_RE.search(text)
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2).lower()
+    if unit.startswith("m"):
+        mins = n
+    elif unit.startswith(("g", "h")):
+        mins = n * 60
+    else:
+        mins = n * 1440
+    return max(1, min(mins, 366 * 1440))
+
+
+def _fmt_minutes(m: int) -> str:
+    if m < 60:
+        return f"{m} min"
+    if m < 1440:
+        return f"{m // 60} ghante"
+    return f"{m // 1440} din"
+
+
+def _msg_id(m) -> Optional[int]:
+    return getattr(m, "id", None) or getattr(m, "message_id", None)
+
+
+async def _admin_can(chat_id: int, user_id: int, right: str) -> bool:
+    """True when this person is the chat owner, or an admin who really has this right."""
+    try:
+        m = await pbot.get_chat_member(chat_id, user_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return False
+    if m.status == ChatMemberStatus.OWNER:
+        return True
+    if m.status != ChatMemberStatus.ADMINISTRATOR:
+        return False
+    priv = getattr(m, "privileges", None)
+    if priv is None:  # older library without per-right info: being admin has to be enough
+        return True
+    return bool(getattr(priv, right, False))
+
+
+async def _resolve_target(message: Message, text: str, bot_username: str):
+    """Who the order is about: the replied-to person, a text mention, an @username or a numeric id."""
+    rt = message.reply_to_message
+    if rt is not None and rt.from_user and not getattr(rt.from_user, "is_self", False) and not rt.from_user.is_bot:
+        return rt.from_user
+    mention_type = getattr(enums.MessageEntityType, "TEXT_MENTION", None)
+    for e in (message.entities or []):
+        u = getattr(e, "user", None)
+        if mention_type is not None and e.type == mention_type and u and not getattr(u, "is_self", False):
+            return u
+    for m in re.finditer(r"@([A-Za-z0-9_]{4,32})", text):
+        if m.group(1).lower() == (bot_username or ""):
+            continue
+        try:
+            return await pbot.get_users(m.group(1))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            continue
+    m = re.search(r"(?<!\d)(\d{6,12})(?!\d)", text)
+    if m:
+        try:
+            return await pbot.get_users(int(m.group(1)))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return None
+    return None
+
+
+async def _run_action(action: str, chat, target, rt, message: Message, minutes: Optional[int]) -> str:
+    """Executes one order. Raises Telegram errors (the caller turns them into a short message)."""
+    cid = chat.id
+    tname = _safe_name(target) if target is not None else ""
+    until = {}
+    if minutes:
+        until["until_date"] = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    if action == "mute":
+        await pbot.restrict_chat_member(cid, target.id, ChatPermissions(), **until)
+        return f"{tname} ko mute kar diya 🔇" + (f" ({_fmt_minutes(minutes)})" if minutes else "")
+    if action == "unmute":
+        full = await pbot.get_chat(cid)
+        perms = getattr(full, "permissions", None) or ChatPermissions(can_send_messages=True)
+        await pbot.restrict_chat_member(cid, target.id, perms)
+        return f"{tname} ab bol sakta hai 🔊"
+    if action == "ban":
+        await pbot.ban_chat_member(cid, target.id, **until)
+        return f"{tname} ko ban kar diya 🚫" + (f" ({_fmt_minutes(minutes)})" if minutes else "")
+    if action == "unban":
+        await pbot.unban_chat_member(cid, target.id)
+        return f"{tname} unban ho gaya ✅"
+    if action == "kick":
+        await pbot.ban_chat_member(cid, target.id)
+        await pbot.unban_chat_member(cid, target.id)
+        return f"{tname} ko bahar kar diya 👋"
+    if action == "pin":
+        await pbot.pin_chat_message(cid, _msg_id(rt))
+        return "pin kar diya 📌"
+    if action == "unpin":
+        await pbot.unpin_chat_message(cid, _msg_id(rt))
+        return "unpin kar diya 📌"
+    if action == "del":
+        await pbot.delete_messages(cid, [i for i in (_msg_id(rt), _msg_id(message)) if i])
+        return ""
+    return ""
+
+
+async def _try_command(message: Message) -> bool:
+    """True when the message was an order (done or refused), so the normal chat reply must be skipped."""
+    chat, user = message.chat, message.from_user
+    if chat is None or user is None or user.is_bot or getattr(user, "is_self", False):
+        return False
+    raw = (message.text or "").strip()
+    if not raw or len(raw) > 400 or _looks_like_command(raw) or not _is_group_chat(chat):
+        return False
+    username = await _get_bot_username()
+    called = bool(_TRIGGER_RE.search(raw)) or bool(username and f"@{username}" in raw.lower())
+    if not called:
+        return False
+    text = re.sub(rf"@{re.escape(username)}\b", "", raw, flags=re.IGNORECASE).strip() if username else raw
+    action, arg = _detect_action(text)
+    if action is None:
+        return False
+    is_owner = user.id == OWNER_ID
+    if action in _OWNER_ONLY and not is_owner:
+        return False
+
+    rt = message.reply_to_message
+    target = None
+    if action in _USER_ACTIONS:
+        target = await _resolve_target(message, text, username)
+        if target is None:
+            return False  # nobody named: probably normal chat
+    elif action in ("pin", "unpin", "del") and rt is None:
+        return False
+    elif action == "say" and not arg:
+        return False
+
+    # who is allowed (Telegram ids and admin rights only)
+    if not (is_owner or user.id in protected_ids):
+        if not await _admin_can(chat.id, user.id, _ACTION_RIGHT.get(action, "")):
+            if RATE.allow(("cmdref", chat.id, user.id), 2, 60):
+                if await is_user_admin(chat.id, user.id):  # an admin, but without this particular right
+                    await _send_reply(message, "tere admin rights me ye nhi hai 😅")
+                else:
+                    await _send_reply(message, random.choice(_CMD_DENY))
+            return True
+
+    if target is not None:
+        if target.id == user.id:
+            await _send_reply(message, "khud pe hi? 😂")
+            return True
+        if target.id == OWNER_ID and not is_owner:
+            await _send_reply(message, "apne malik pe haath nhi uthata mai 😏")
+            return True
+        if (action in ("mute", "ban", "kick") and not is_owner
+                and await is_user_admin(chat.id, target.id)):
+            await _send_reply(message, "wo admin hai, mai kuch nhi kar sakta")
+            return True
+
+    minutes = _parse_minutes(text) if action in ("mute", "ban") else None
+    out = ""
+    try:
+        if action == "say":
+            if rt is not None:
+                await rt.reply_text(arg[:1000], parse_mode=enums.ParseMode.DISABLED)
+            else:
+                await _send_plain(chat.id, arg[:1000])
+            with suppress(Exception):
+                await message.delete()
+        elif action == "leave":
+            await _send_reply(message, "chal bye 👋")
+            await pbot.leave_chat(chat.id)
+        else:
+            out = await _run_action(action, chat, target, rt, message, minutes)
+    except asyncio.CancelledError:
+        raise
+    except FloodWait:
+        out = "telegram ne roka hai, thodi der baad bol"
+    except RPCError as e:
+        code = str(getattr(e, "ID", "") or "")
+        log.info("order %s failed: %s", action, code)
+        out = _CMD_ERRORS.get(code, "nhi ho paya, shayad mere paas rights nhi hai")
+    except Exception:
+        log.exception("order %s error", action)
+        out = "kuch gadbad ho gayi"
+    if out:
+        await _send_reply(message, out)
+    return True
+
+
+async def _text_entry(message: Message):
+    """Text messages: owner/admin orders first, otherwise normal chat."""
+    if await _try_command(message):
+        return
+    await _process(message)
+
+
 async def _run_safely(coro, what: str):
     try:
         await coro
@@ -3164,7 +3499,7 @@ async def _handle_voice_input(message: Message):
     group=10
 )
 async def chatbot_handler(_, message: Message):
-    _spawn(_run_safely(_process(message), "chatbot handler"))
+    _spawn(_run_safely(_text_entry(message), "chatbot handler"))
 
 
 @pbot.on_message(
