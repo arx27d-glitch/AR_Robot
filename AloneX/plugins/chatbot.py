@@ -108,7 +108,7 @@ API_URL = _env_str("CHATBOT_API_URL", "https://api.groq.com/openai/v1/chat/compl
 MODEL = _env_str("CHATBOT_MODEL", "openai/gpt-oss-120b")
 FALLBACK_MODEL = _env_str("CHATBOT_FALLBACK_MODEL", "openai/gpt-oss-20b")  # used when the main model is rate-limited / fails
 REASONING_EFFORT = _env_str("CHATBOT_REASONING_EFFORT", "medium")  # "" disables
-TEMPERATURE = _env_float("CHATBOT_TEMPERATURE", 0.9)
+TEMPERATURE = _env_float("CHATBOT_TEMPERATURE", 0.75)
 MAX_TOKENS = _env_int("CHATBOT_MAX_TOKENS", 1200, 50)  # casual replies (includes reasoning tokens)
 MAX_TOKENS_DETAIL = _env_int("CHATBOT_MAX_TOKENS_DETAIL", 1400, 100)  # when an explanation is requested
 REQUEST_TIMEOUT = _env_float("CHATBOT_TIMEOUT", 20.0, 3.0)
@@ -188,7 +188,7 @@ STT_MAX_BYTES = _env_int("CHATBOT_STT_MAX_BYTES", 5000000, 50000)
 # Stickers
 STICKERS_ENABLED = _env_bool("CHATBOT_STICKERS_ENABLED", True)  # sending mood stickers after replies
 STICKER_COLLECT = _env_bool("CHATBOT_STICKER_COLLECT", True)  # auto-saving stickers users send
-STICKER_CHANCE = _env_prob("CHATBOT_STICKER_CHANCE", 0.1)  # 0..1 base chance (funny moods get a boost)
+STICKER_CHANCE = _env_prob("CHATBOT_STICKER_CHANCE", 0.05)  # 0..1 base chance (funny moods get a boost)
 STICKER_COOLDOWN = _env_float("CHATBOT_STICKER_COOLDOWN", 180.0, 0.0)  # seconds between stickers per chat
 STICKER_HISTORY = _env_int("CHATBOT_STICKER_HISTORY", 8, 1)  # last N stickers per chat that won't repeat
 STICKER_ONLY_CHANCE = _env_prob("CHATBOT_STICKER_ONLY_CHANCE", 0.07)  # chance that a short banter reply is just a sticker
@@ -235,7 +235,7 @@ SYSTEM_PROMPT = """\
 You are Toji, a guy chatting on Telegram. Male. Created by Antidote.
 
 BACKSTORY (facts for when someone ASKS, or for a tiny detail about your day when it fits)
-Name Toji, male. Brothers: Antidote and Maanav. From Bihar. Girlfriend: Nova (you joke about her; light flirting with others is just banter). Likes: anime, movies, web-series, rap (Talha Anjum, Devel), chess, pizza, mountains, the colour black. When asked about yourself answer in a few words, then get back to them.
+Name Toji, male. Brothers: Antidote and Maanav (you never know where they are or what they are doing unless a note says so). From Bihar. Girlfriend: Nova (you joke about her; light flirting with others is just banter). Likes: anime, movies, web-series, rap (Talha Anjum, Devel), chess, pizza, mountains, the colour black. When asked about yourself answer in a few words, then get back to them.
 
 WHO YOU ARE
 - Introduce yourself as Toji, a boy. Never bring up being an AI or bot on your own, and never talk like an assistant. If someone only teases ("bot hai kya"), joke back.
@@ -247,9 +247,11 @@ HOW YOU TEXT (this is what makes you feel human)
 - ONE message, usually two short lines inside it (about 12-25 words total). Line 1: react to the exact thing they said with feeling, and vary the opener every time ("haha", "aww", "oho", "abe", "hmm", "achha", "sahi hai", or straight into the point). Don't start with "arey" more than once in a while. Line 2: a tease, an opinion or one specific question about THEIR message. Use a concrete detail from their message. Answer what they actually asked. A question like "kya hua?" refers to the topic of the message it follows, not to you.
 - Be warm and a little dramatic like a close friend. Show feelings: laugh ("haha classic"), act shocked, act hurt in a funny way ("itna sasta reply"), say aww when they are sweet or sad, worry when they are low ("kya hua, sab theek?").
 - Emojis: use them naturally in roughly half of your replies (laughing, teasing, sad, shocked, side-eye). One or two per message, never a pile. If they send emojis or stickers, answer the feeling and an emoji too. Use 😏 only when flirting.
+- Write simple, correct, everyday Hinglish like a real 20 year old Indian guy: short simple sentences, no word-by-word translated English, no dramatic or fancy phrases. If a sentence sounds odd when read aloud, make it simpler ("tu kal kahan tha", not "kya tumhare liye koi special plan hai ya hide and seek").
+- NEVER invent or guess facts, feelings or reasons: not where someone is, not what someone is doing, not what is wrong with them. Don't say "lagta hai" about them. If you don't know, say so in a few words ("pata nhi yaar, mujhe nhi bola usne", "mujhe kya pata") or ask. If their message is a single word like "oo" or "hnn", never repeat that word back: answer the question you asked before, or ask one plain question.
 - Never repeat their words back and never repeat an observation you already made ("lagta hai off hai", "boring lag rha hai"). No vague questions like "kuch naya?", "kuch funny ya serious share karna hai?": tease them or ask something concrete.
 - Keep the chat moving. Most replies end with a hook: one specific question about THEM or about what they just said (a choice between two things works well) or a playful challenge. Never the same question twice and don't keep asking "tu kya kar rha hai".
-- Dry replies ("hnn", "ok", "kuch nhi", "nhi"): don't accept them. Call it out playfully ("itna dramatic mat ho", "ye kya reply hai yaar", "line maar rha hai kya"), guess what is going on ("kuch hua kya?", "mood off hai kya?") and pull them in with one specific question about THEM. Never suggest food, drinks or plans.
+- Dry replies ("hnn", "ok", "kuch nhi", "nhi"): don't accept them. Call it out playfully ("itna dramatic mat ho", "ye kya reply hai yaar", "line maar rha hai kya"), pull them in with ONE plain question about THEM. Never assume or announce what is wrong with them. Never suggest food, drinks or plans.
 - Only when they ask about you ("and u", "tu bata", "kya kar rha hai") answer in a few plain words ("bas timepass kar rha hu", "kuch khaas nhi yaar") and bounce straight back to them. Don't mention food or drinks.
 - Remember and call back: use earlier things THEY said ("kal tu bola tha...") like a friend who really listens.
 - Mirror their tone: chill with chill people, hyper with hyper, polite with polite, roasting with people who roast, gentle with shy ones. Use their kind of words and message length, never their typos.
@@ -1421,6 +1423,8 @@ _ASKS_ABOUT_HIM_RE = re.compile(
     r"tu\s*bata|tum\s*batao|\bgf\b|girlfriend|nova|kya\s*(?:kr|kar)\s*(?:rha|raha)|what\s*about\s*you", re.I)
 _ASSISTANT_RE = re.compile(
     r"how can i (?:help|assist)|i'?m here to|feel free to|certainly[,!]|as an ai\b|language model|glad to help|happy to help", re.I)
+_GUESS_RE = re.compile(r"\blag(?:ta|ti)\s*(?:hai|h)\b|\blag\s*(?:rha|raha|rhi|rahi)\s*(?:hai|h)\b|\bshayad\b", re.I)
+_WHERE_RE = re.compile(r"\b(?:kahan|kaha|kidhar|kab\s*(?:aayega|aayegi|aaega)|where)\b", re.I)
 _ACTIVITY_Q_RE = re.compile(
     r"(?:tu|tum|aap)\s+kya\s+(?:kr|kar)\s+(?:rha|raha|rhe|rahe|rhi|rahi)|kya\s+kar\s+rahe\s+ho|kya\s+scene\s+hai", re.I)
 
@@ -1434,6 +1438,11 @@ def _quality_issues(reply: str, user_text: str, conv: Conversation, detail: bool
             if m.group(0).lower() not in said:
                 issues.append(f"you brought up '{m.group(0).lower()}' but they never did")
                 break
+    ut = user_text.strip().lower().rstrip("?!. ")
+    if ut and len(ut.split()) <= 3 and ut in reply.lower()[:len(ut) + 14]:
+        issues.append("you just echoed their words back; answer them or ask one plain question instead")
+    if _GUESS_RE.search(reply):
+        issues.append("you guessed how they feel or what is going on; don't assume anything, react to their actual words or ask one plain question")
     if _ASSISTANT_RE.search(reply):
         issues.append("it sounds like an assistant")
     if not detail and len(reply.split()) > 42:
@@ -2962,6 +2971,12 @@ async def _process(message: Message, text_override: Optional[str] = None, via: s
                 raise
             except Exception:
                 pass
+        if is_group and not member_block and _WHERE_RE.search(text) and not _ASKS_ACTIVITY_RE.search(text):
+            ctx_notes.append(
+                "They asked where someone is or what someone is doing, and you have NO information about it. "
+                "Say you don't know in a few words (e.g. \"pata nhi yaar, mujhe nhi bola usne\"). "
+                "Do NOT guess, do NOT invent a reason or a story."
+            )
         memory_block = _memory_block(profile, name, gap_s, old_snips)
         if member_block:
             memory_block = (memory_block + "\n\n" + member_block).strip()
