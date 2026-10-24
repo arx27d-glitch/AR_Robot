@@ -146,10 +146,10 @@ async def root_route_handler(request):
 <body>
     <div class="container">
         <div class="hero">
-            <img src="https://i.ibb.co/PZmh6bkf/file-337.jpg" alt="AloneX Kun">
-            <h1>AloneX Assistant Bot</h1>
+            <img src="https://i.ibb.co/PZmh6bkf/file-337.jpg" alt="TOJI">
+            <h1>AR Assistant Bot</h1>
             <p>Your all-in-one Telegram assistant powered by AI</p>
-            <a href="https://t.me/AloneXkunbot?start=help" class="cta-button">Start Using Bot</a>
+            <a href="https://t.me/arProGuardBot?start=help" class="cta-button">Start Using Bot</a>
         </div>
 
         <div class="features">
@@ -191,7 +191,7 @@ async def root_route_handler(request):
         </div>
 
         <footer>
-            <p>Made with ❤️ by <a href="https://t.me/DEPSTEY" target="_blank">@Sahil</a></p>
+            <p>Made with ❤️ by <a href="https://t.me/LustyAntidote" target="_blank">@AR</a></p>
         </footer>
     </div>
 </body>
