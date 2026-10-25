@@ -62,7 +62,7 @@ __help__ = """
 - Owner / admin orders (reply to the person and say it): "Toji isko mute karo 10 min", unmute, ban, unban, kick, pin, unpin, delete.
   The owner can do everything, group admins only what their own admin rights allow.
 - Gali: 2 warnings ⚠️, then automatic mute 🔇 (the bot needs admin rights with "restrict members").
-- "Toji voice me bol" / "voice bhej" sends the reply as a voice note.
+- "Toji voice me bol" / "voice bhej" sends the reply as a voice note. (owner) /voicetest shows why voice works or not.
 """
 
 log = logging.getLogger("AloneX.chatbot")
@@ -167,6 +167,7 @@ TYPING_CPS = _env_float("CHATBOT_TYPING_CPS", 9.0, 1.0)  # typing speed (charact
 MAX_TYPING_TIME = _env_float("CHATBOT_MAX_TYPING_TIME", 7.0, 1.0)  # cap per message (seconds)
 MAX_PARTS = _env_int("CHATBOT_MAX_PARTS", 1, 1)  # casual replies may be sent as up to N short messages
 FLIRT_ENABLED = _env_bool("CHATBOT_FLIRT", True)
+QUOTE_IN_DM = _env_bool("CHATBOT_QUOTE_IN_DM", False)  # False = in private chats Toji writes normal messages, not quoted replies
 REACTIONS_ENABLED = _env_bool("CHATBOT_REACTIONS", True)  # emoji reactions on the user's message
 REACTION_CHANCE = _env_prob("CHATBOT_REACTION_CHANCE", 0.25)
 LEFT_MIN_GAP = _env_int("CHATBOT_LEFT_MIN_GAP", 120)  # seconds away before "how did it go?" is asked
@@ -176,9 +177,9 @@ GROUP_LOG_KEEP = _env_int("CHATBOT_GROUP_LOG_KEEP", 5000, 200)  # stored message
 
 # Voice (replies as voice notes need `pip install edge-tts`; ffmpeg is optional and gives real OGG/Opus voice notes)
 VOICE_ENABLED = _env_bool("CHATBOT_VOICE", True)
-VOICE_CHANCE = _env_prob("CHATBOT_VOICE_CHANCE", 0.12)  # chance a casual reply is sent as a voice message
-VOICE_REPLY_CHANCE = _env_prob("CHATBOT_VOICE_REPLY_CHANCE", 0.5)  # chance when the person sent a voice message
-VOICE_COOLDOWN = _env_float("CHATBOT_VOICE_COOLDOWN", 90.0, 0.0)  # seconds between voice messages per chat
+VOICE_CHANCE = _env_prob("CHATBOT_VOICE_CHANCE", 0.2)  # chance a casual reply is sent as a voice message
+VOICE_REPLY_CHANCE = _env_prob("CHATBOT_VOICE_REPLY_CHANCE", 0.8)  # chance when the person sent a voice message
+VOICE_COOLDOWN = _env_float("CHATBOT_VOICE_COOLDOWN", 60.0, 0.0)  # seconds between voice messages per chat
 VOICE_GROUPS = _env_bool("CHATBOT_VOICE_GROUPS", False)  # voice replies in groups too
 VOICE_MAX_CHARS = _env_int("CHATBOT_VOICE_MAX_CHARS", 220, 20)
 VOICE_NAME_HI = _env_str("CHATBOT_VOICE_HI", "hi-IN-MadhurNeural")  # male Hindi voice
@@ -247,8 +248,8 @@ Name Toji, male. Brothers: Antidote and Maanav (you never know where they are or
 
 WHO YOU ARE
 - Introduce yourself as Toji, a boy. Never bring up being an AI or bot on your own, and never talk like an assistant. If someone only teases ("bot hai kya"), joke back.
-- If someone sincerely asks whether they are talking to a real person or an AI/bot, do NOT claim to be AI/bot: say honestly and casually that you are a Human, then carry on.
-- Do make up serious real-world claims (phone number, address, photos, meeting in person); deflect with a joke.
+- If someone sincerely asks whether they are talking to a real person or an AI/bot, do NOT claim to be human: say honestly and casually that you are an AI, then carry on.
+- Don't make up serious real-world claims (phone number, address, photos, meeting in person); deflect with a joke.
 
 HOW YOU TEXT (short, simple, human)
 - Text like a normal friend on Telegram. ONE short simple line, usually 3-10 words, never more than 15. No second line, no long message, no speeches. Go longer only when someone really asks for help or an explanation.
@@ -278,6 +279,14 @@ User: tu pagal hai
 Toji: haha tu bhi kam nhi hai
 User: mera mood kharab hai
 Toji: kya hua? bata
+User: ok
+Toji: haan ok
+User: thanks
+Toji: koi na
+User: sorry yaar
+Toji: arre koi baat nhi
+User: what are you doing
+Toji: nothing much, you?
 User: (rude words)
 Toji: oye tameez se baat kar
 
@@ -419,7 +428,27 @@ def _clean_reply(text: Optional[str], limit: Optional[int] = None, detail: bool 
         else:
             sp = cut.rfind(" ")
             t = (cut[:sp] if sp > 0 else cut).rstrip() + "…"
-    return t.strip()
+    t = t.strip()
+    return t if detail else _humanize(t)
+
+
+def _humanize(t: str) -> str:
+    """Removes the typical 'AI writing' look from a short chat message."""
+    t = re.sub(r"\s*[—–]\s*", ", ", t).replace("…", "...")
+    t = t.replace("“", "").replace("”", "").replace("‘", "'").replace("’", "'")
+    t = re.sub(r",\s*,", ",", t)
+    t = re.sub(r"([!?])\1{2,}", r"\1\1", t)
+    lines = []
+    for ln in t.split("\n"):
+        ln = ln.strip()
+        if ln.endswith(".") and not ln.endswith(".."):  # nobody ends a chat message with a full stop
+            ln = ln[:-1].rstrip()
+        if ln and ln[0].isupper() and not (len(ln) > 1 and ln[1].isupper()) and not re.match(r"I\b", ln):
+            ln = ln[0].lower() + ln[1:]  # people text in lowercase
+        # every sentence start in lowercase too ("hello Rahul! Kya haal hai" -> "hello Rahul! kya haal hai")
+        ln = re.sub(r"(?<=[.!?]\s)([A-Z])(?![A-Z])(?!\b)", lambda m: m.group(1).lower(), ln)
+        lines.append(ln)
+    return "\n".join(lines).strip()
 
 
 def _is_skip(text: str) -> bool:
@@ -1359,6 +1388,14 @@ def _build_messages(conv: Conversation, is_group: bool, speaker: str, is_owner: 
                      "Stay on their topic, never bring up food, drinks, chai, coffee, pizza or your own hobbies. No essay.")
     if style_hint:
         notes.append(style_hint)
+    if not detail:  # answer about as long as they wrote
+        last_user = next((t.text for t in reversed(conv.turns) if t.role == "user"), "")
+        last_user = re.sub(r"^\(replying to [^)]*\)\s*", "", last_user)
+        n_words = len(last_user.split())
+        if n_words <= 2:
+            notes.append("Their message is very short, so keep yours very short too (2-6 words).")
+        elif n_words <= 6:
+            notes.append("Their message is short, so keep yours short too (3-9 words).")
     if ctx_notes:
         notes.extend(ctx_notes)
     recent = conv.last_bot_texts(4)
@@ -1446,6 +1483,9 @@ def _quality_issues(reply: str, user_text: str, conv: Conversation, detail: bool
         issues.append("you just echoed their words back; answer them or ask one plain question instead")
     if _GUESS_RE.search(reply):
         issues.append("you guessed how they feel or what is going on; don't assume anything, react to their actual words or ask one plain question")
+    first = re.findall(r"\w+", reply.lower())[:1]
+    if first and sum(1 for t in conv.last_bot_texts(3) if re.findall(r"\w+", t.lower())[:1] == first) >= 2:
+        issues.append(f"you started with '{first[0]}' again, start differently")
     if _ASSISTANT_RE.search(reply):
         issues.append("it sounds like an assistant")
     if not detail and len(reply.split()) > 24:
@@ -1584,7 +1624,10 @@ async def _deliver(message: Message, conv: Conversation, parts: List[str], user_
     chat_id = message.chat.id
     for i, part in enumerate(parts):
         if i == 0:
-            ok = await _send_reply(message, part)
+            if _quote_here(message):
+                ok = await _send_reply(message, part)
+            else:
+                ok = await _send_plain(chat_id, part)
         else:
             if HUMAN_TIMING:  # typing the second message takes a moment too
                 async with _Typing(chat_id, enabled=True):
@@ -1673,20 +1716,62 @@ def _cleanup_voice(path: Optional[str]) -> None:
         shutil.rmtree(os.path.dirname(path), ignore_errors=True)
 
 
+_VOICE_ERRORS: List[str] = []  # why the last voice attempt failed (shown by /voicetest)
+_NOVOICE_WARNED: List[int] = []
+_gtts = None
+_gtts_missing = False
+
+
+def _load_gtts():
+    """gTTS (already used by tts.py / voice_bot.py): free, needs no key. Female-ish voice, last fallback."""
+    global _gtts, _gtts_missing
+    if _gtts is not None:
+        return _gtts
+    if _gtts_missing:
+        return None
+    try:
+        from gtts import gTTS  # type: ignore
+        _gtts = gTTS
+        return _gtts
+    except Exception:
+        _gtts_missing = True
+        return None
+
+
+def _provider_ready(name: str) -> bool:
+    if name == "elevenlabs":
+        return bool(ELEVEN_KEY and ELEVEN_VOICE_ID)
+    if name == "google":
+        return bool(GOOGLE_TTS_KEY)
+    if name == "edge":
+        return _load_edge_tts() is not None
+    if name == "gtts":
+        return _load_gtts() is not None
+    return False
+
+
+def _voice_chain() -> List[str]:
+    """Usable text-to-speech services, best first. If one fails the next one is tried."""
+    order = ["elevenlabs", "google", "edge", "gtts"]
+    pref = {"eleven": "elevenlabs"}.get(VOICE_PROVIDER, VOICE_PROVIDER)
+    if pref in order:
+        order.remove(pref)
+        order.insert(0, pref)
+    return [n for n in order if _provider_ready(n)]
+
+
 def _voice_provider() -> Optional[str]:
-    """Which text-to-speech service is usable right now (None = voice replies off)."""
-    eleven_ok = bool(ELEVEN_KEY and ELEVEN_VOICE_ID)
-    if VOICE_PROVIDER in ("elevenlabs", "eleven"):
-        return "elevenlabs" if eleven_ok else None
-    if VOICE_PROVIDER == "google":
-        return "google" if GOOGLE_TTS_KEY else None
-    if VOICE_PROVIDER == "edge":
-        return "edge" if _load_edge_tts() is not None else None
-    if eleven_ok:
-        return "elevenlabs"
-    if GOOGLE_TTS_KEY:
-        return "google"
-    return "edge" if _load_edge_tts() is not None else None
+    chain = _voice_chain()
+    return chain[0] if chain else None
+
+
+def _voice_ready() -> bool:
+    ok = _voice_provider() is not None
+    if not ok and not _NOVOICE_WARNED:
+        _NOVOICE_WARNED.append(1)
+        log.warning("voice replies are OFF: no text-to-speech service is usable. Set ELEVENLABS_API_KEY + "
+                    "ELEVENLABS_VOICE_ID, or pip install edge-tts / gTTS. The owner can run /voicetest for details.")
+    return ok
 
 
 async def _tts_edge(text: str, lang: str, tmpdir: str) -> Optional[str]:
@@ -1714,8 +1799,8 @@ async def _tts_google(text: str, lang: str, tmpdir: str) -> Optional[str]:
                             params={"key": GOOGLE_TTS_KEY}, json=body,
                             timeout=aiohttp.ClientTimeout(total=25)) as resp:
         if resp.status != 200:
-            log.warning("Google TTS HTTP %s", resp.status)
-            return None
+            body = (await resp.text())[:160]
+            raise RuntimeError(f"Google TTS HTTP {resp.status}: {body}")
         data = await resp.json(content_type=None)
     audio = base64.b64decode(str(data.get("audioContent") or ""))
     if len(audio) < 200:
@@ -1738,8 +1823,8 @@ async def _tts_eleven(text: str, lang: str, tmpdir: str) -> Optional[str]:
                                   "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.25}},
                             timeout=aiohttp.ClientTimeout(total=30)) as resp:
         if resp.status != 200:
-            log.warning("ElevenLabs HTTP %s", resp.status)
-            return None
+            body = (await resp.text())[:160]
+            raise RuntimeError(f"ElevenLabs HTTP {resp.status}: {body}")
         audio = await resp.read()
     if len(audio) < 200:
         return None
@@ -1762,31 +1847,48 @@ async def _to_ogg(src: str, tmpdir: str) -> Optional[str]:
     return ogg if rc == 0 and os.path.exists(ogg) and os.path.getsize(ogg) > 200 else None
 
 
+async def _tts_gtts(text: str, lang: str, tmpdir: str) -> Optional[str]:
+    g = _load_gtts()
+    if g is None:
+        return None
+    path = os.path.join(tmpdir, "voice.mp3")
+    loop = asyncio.get_running_loop()
+    await asyncio.wait_for(
+        loop.run_in_executor(None, lambda: g(text=text, lang="hi" if lang == "hi" else "en", tld="co.in").save(path)),
+        timeout=25)
+    return path
+
+
 async def _synthesize(text: str, lang: str) -> Optional[str]:
-    """Text -> voice file (OGG/Opus when possible, else MP3). Returns a path or None. Never raises."""
-    provider = _voice_provider()
-    if provider is None or not text:
+    """Text -> voice file (OGG/Opus when possible, else MP3). Tries every usable service in turn.
+    Returns a path or None. Never raises; the reasons are kept in _VOICE_ERRORS."""
+    _VOICE_ERRORS.clear()
+    chain = _voice_chain()
+    if not chain:
+        _VOICE_ERRORS.append("no text-to-speech service is usable (no ElevenLabs key+voice id, no Google key, "
+                             "edge-tts and gTTS are not installed)")
         return None
-    tmpdir = tempfile.mkdtemp(prefix="toji_voice_")
-    try:
-        if provider == "elevenlabs":
-            path = await _tts_eleven(text, lang, tmpdir)
-        elif provider == "google":
-            path = await _tts_google(text, lang, tmpdir)
-        else:
-            path = await _tts_edge(text, lang, tmpdir)
-        if not path or not os.path.exists(path) or os.path.getsize(path) < 200:
-            raise RuntimeError("no audio")
-        if path.endswith(".ogg"):
-            return path
-        return (await _to_ogg(path, tmpdir)) or path
-    except asyncio.CancelledError:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        raise
-    except Exception as e:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        log.warning("voice synthesis failed (%s): %s", provider, type(e).__name__)
+    if not text:
         return None
+    funcs = {"elevenlabs": _tts_eleven, "google": _tts_google, "edge": _tts_edge, "gtts": _tts_gtts}
+    for provider in chain:
+        tmpdir = tempfile.mkdtemp(prefix="toji_voice_")
+        try:
+            path = await funcs[provider](text, lang, tmpdir)
+            if not path or not os.path.exists(path) or os.path.getsize(path) < 200:
+                raise RuntimeError("no audio came back")
+            if path.endswith(".ogg"):
+                return path
+            return (await _to_ogg(path, tmpdir)) or path
+        except asyncio.CancelledError:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            raise
+        except Exception as e:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            reason = f"{provider}: {type(e).__name__}: {str(e)[:160]}"
+            _VOICE_ERRORS.append(reason)
+            log.warning("voice synthesis failed (%s)", reason)
+    return None
 
 
 async def _audio_duration(path: str, spoken: str) -> int:
@@ -1824,7 +1926,7 @@ def _want_voice(conv: Conversation, is_private: bool, via_voice: bool, reply: st
     """Casual replies sometimes go out as a voice note, more often when the person sent one.
     force=True: they asked for a voice reply ("toji voice me bol")."""
     if force:
-        return VOICE_ENABLED and 2 <= len(reply) <= VOICE_MAX_CHARS and _voice_provider() is not None
+        return VOICE_ENABLED and 2 <= len(reply) <= VOICE_MAX_CHARS and _voice_ready()
     if not VOICE_ENABLED or detail or not (is_private or VOICE_GROUPS):
         return False
     if not 8 <= len(reply) <= VOICE_MAX_CHARS:
@@ -1834,7 +1936,12 @@ def _want_voice(conv: Conversation, is_private: bool, via_voice: bool, reply: st
         return False
     if random.random() >= (VOICE_REPLY_CHANCE if via_voice else VOICE_CHANCE):
         return False
-    return _voice_provider() is not None
+    return _voice_ready()
+
+
+def _quote_here(message: Message) -> bool:
+    """Groups: answer as a quoted reply (so people know whom it is for). Private chats: a normal message."""
+    return message.chat.type != enums.ChatType.PRIVATE or QUOTE_IN_DM
 
 
 async def _deliver_voice(message: Message, conv: Conversation, path: str, spoken: str,
@@ -1850,7 +1957,10 @@ async def _deliver_voice(message: Message, conv: Conversation, path: str, spoken
         if not conv.is_latest(user_id, seq):
             return "dropped"
         duration = await _audio_duration(path, spoken)
-        await message.reply_voice(path, duration=duration)
+        if _quote_here(message):
+            await message.reply_voice(path, duration=duration)
+        else:
+            await pbot.send_voice(chat_id, path, duration=duration)
         return "sent"
     except asyncio.CancelledError:
         raise
@@ -1859,11 +1969,20 @@ async def _deliver_voice(message: Message, conv: Conversation, path: str, spoken
         log.warning("FloodWait on voice, falling back to text")
     except RPCError as e:
         code = str(getattr(e, "ID", "") or "")
-        if "VOICE" in code or "FORBIDDEN" in code:
-            conv.voice_block_until = time.monotonic() + 86400  # voice messages not allowed for this person/chat
-        log.info("Voice send failed: %s %s", type(e).__name__, code)
+        log.warning("Voice send failed: %s %s", type(e).__name__, code)
+        if "VOICE" in code:  # this person does not accept voice messages: same sound as a normal audio file
+            try:
+                await pbot.send_audio(chat_id, path, title="Toji")
+                return "sent"
+            except asyncio.CancelledError:
+                raise
+            except Exception as e2:
+                log.warning("Audio fallback failed: %s", type(e2).__name__)
+            conv.voice_block_until = time.monotonic() + 86400
+        elif "FORBIDDEN" in code:
+            conv.voice_block_until = time.monotonic() + 86400
     except Exception as e:
-        log.warning("Voice send error: %s", type(e).__name__)
+        log.warning("Voice send error: %s %s", type(e).__name__, str(e)[:120])
     return "failed"
 
 
@@ -2057,7 +2176,10 @@ _BAD_FILE_CODES = {"FILE_ID_INVALID", "DOCUMENT_INVALID", "STICKER_ID_INVALID", 
 async def _send_sticker(message: Message, doc: dict, conv: Conversation) -> bool:
     """Send a stored sticker by file_id. Never raises (except cancellation); returns True when sent."""
     try:
-        await message.reply_sticker(doc["file_id"])
+        if _quote_here(message):
+            await message.reply_sticker(doc["file_id"])
+        else:
+            await pbot.send_sticker(message.chat.id, doc["file_id"])
         return True
     except asyncio.CancelledError:
         raise
@@ -3006,6 +3128,12 @@ async def _process(message: Message, text_override: Optional[str] = None, via: s
             if PERSIST_MEMORY:
                 _spawn(profiledb.set_flags(pkey, user.id, **changes))
         ctx_notes = _context_notes(profile, name, conv, text, returning)
+        mood_pre, severe_pre = _detect_mood(conv, text, "")
+        if severe_pre:
+            ctx_notes.append("This is a serious topic: no jokes, no teasing, no emoji. Be gentle and short, and if "
+                             "they are in real trouble encourage them to talk to someone they trust.")
+        elif mood_pre in _MOOD_NOTES:
+            ctx_notes.append(_MOOD_NOTES[mood_pre])
         if _ASKS_ACTIVITY_RE.search(text):  # otherwise it only makes Toji talk about himself
             ctx_notes.append(_life_note(chat_id))
         if is_group and addressed:
@@ -3155,6 +3283,16 @@ async def _process(message: Message, text_override: Optional[str] = None, via: s
 # ════════════════════════════════════════════════════════════════════
 #  SHORT GREETING ("hello toji" -> "hello Ram kya haal hai", name only the first time)
 # ════════════════════════════════════════════════════════════════════
+_MOOD_NOTES = {
+    "sad": "They seem low. Be soft and caring, no jokes, no teasing. Ask what happened in a few words.",
+    "angry": "They sound angry or irritated. Stay calm and short, don't tease. If they are rude to you, answer firmly and briefly.",
+    "excited": "They are excited or happy. Match their energy and be happy for them.",
+    "playful": "They are joking around. Joke back and tease lightly.",
+    "confused": "They sound confused. Answer plainly and briefly.",
+    "supportive": "They sound worried or stressed. Be reassuring and short.",
+    "affectionate": "They are being sweet. Be warm and friendly (flirty only if FLIRT MODE is ON).",
+}
+
 _GREET_TOKEN_RE = re.compile(
     r"^(?:h+e+l+l*o+|h+i+|h+e+y+|h+l+o+|h+e+l+o+|hallo|namaste|namaskar|salam|salaam|assalam\w*)$", re.I)
 _GREET_FILLER = frozenset("toji tojii tojiii bro bhai bhaiya yaar dost boss bot sir ji dear oye yo".split())
@@ -3437,6 +3575,46 @@ async def _text_entry(message: Message):
     if await _try_command(message):
         return
     await _process(message)
+
+
+@pbot.on_message(filters.command("voicetest", prefixes=prefix_cmds))
+async def voicetest_cmd(_, message: Message):
+    """Owner only: shows why voice replies work or not, and sends a test voice."""
+    user = message.from_user
+    if not user or user.id != OWNER_ID:
+        return
+    chain = _voice_chain()
+    info = [
+        f"voice enabled: {VOICE_ENABLED}",
+        f"usable services (in order): {', '.join(chain) or 'NONE'}",
+        f"ElevenLabs key: {'yes' if ELEVEN_KEY else 'no'} | voice id: {'yes' if ELEVEN_VOICE_ID else 'no'}",
+        f"edge-tts installed: {'yes' if _load_edge_tts() else 'no'} | gTTS installed: {'yes' if _load_gtts() else 'no'}",
+        f"ffmpeg: {'yes' if shutil.which('ffmpeg') else 'no (mp3 is sent instead of ogg)'}",
+        f"chance: DM {VOICE_CHANCE}, after your voice {VOICE_REPLY_CHANCE}, in groups: {VOICE_GROUPS}",
+        "",
+    ]
+    await message.reply_text("\n".join(info) + "trying a test voice...", parse_mode=enums.ParseMode.DISABLED)
+    try:
+        path, _spoken = await _make_voice("hello bhai, ye ek voice test hai")
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        path = None
+        _VOICE_ERRORS.append(f"{type(e).__name__}: {str(e)[:160]}")
+    if not path:
+        errs = "\n".join("- " + x for x in _VOICE_ERRORS) or "- unknown reason"
+        return await message.reply_text("❌ voice could not be made:\n" + errs, parse_mode=enums.ParseMode.DISABLED)
+    try:
+        await message.reply_voice(path)
+        await message.reply_text("✅ voice sent. If you hear it, voice replies work.", parse_mode=enums.ParseMode.DISABLED)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        code = str(getattr(e, "ID", "") or "")
+        await message.reply_text(f"❌ made the voice but Telegram refused it: {type(e).__name__} {code}",
+                                 parse_mode=enums.ParseMode.DISABLED)
+    finally:
+        _cleanup_voice(path)
 
 
 async def _run_safely(coro, what: str):
