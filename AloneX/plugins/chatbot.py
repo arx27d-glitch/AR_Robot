@@ -113,6 +113,7 @@ API_URL = _env_str("CHATBOT_API_URL", "https://api.groq.com/openai/v1/chat/compl
 MODEL = _env_str("CHATBOT_MODEL", "openai/gpt-oss-120b")
 FALLBACK_MODEL = _env_str("CHATBOT_FALLBACK_MODEL", "openai/gpt-oss-20b")  # used when the main model is rate-limited / fails
 REASONING_EFFORT = _env_str("CHATBOT_REASONING_EFFORT", "medium")  # "" disables
+CASUAL_EFFORT = _env_str("CHATBOT_CASUAL_EFFORT", "low")  # thinking effort for normal short chat replies
 TEMPERATURE = _env_float("CHATBOT_TEMPERATURE", 0.75)
 MAX_TOKENS = _env_int("CHATBOT_MAX_TOKENS", 1200, 50)  # casual replies (includes reasoning tokens)
 MAX_TOKENS_DETAIL = _env_int("CHATBOT_MAX_TOKENS_DETAIL", 1400, 100)  # when an explanation is requested
@@ -449,6 +450,36 @@ def _humanize(t: str) -> str:
         ln = re.sub(r"(?<=[.!?]\s)([A-Z])(?![A-Z])(?!\b)", lambda m: m.group(1).lower(), ln)
         lines.append(ln)
     return "\n".join(lines).strip()
+
+
+def _shorten_casual(t: str) -> str:
+    """Casual chat is ONE short line. Cuts anything longer (first line, first sentence, at most ~14 words)."""
+    lines = [ln.strip() for ln in t.split("\n") if ln.strip()]
+    if not lines:
+        return t
+    t = lines[0]
+    if len(t.split()) > 12:
+        sentences = re.split(r"(?<=[.!?।])\s+", t)
+        first = sentences[0]
+        t = first if len(first.split()) >= 3 or len(sentences) == 1 else " ".join(sentences[:2])
+    words = t.split()
+    if len(words) > 16:
+        t = " ".join(words[:14]).rstrip(",;:- ")
+    return t
+
+
+_SPELL_SHORT = {"nahi": "nhi", "raha": "rha", "rahi": "rhi", "rahe": "rhe"}
+
+
+def _mirror_spelling(reply: str, conv: "Conversation") -> str:
+    """Spells like the person does: 'nhi/rha' with people who write short forms, 'nahi/raha' with the others."""
+    blob = " ".join(t.text for t in list(conv.turns) if t.role == "user")[-600:].lower()
+    short = len(re.findall(r"\b(?:nhi|rha|rhi|rhe)\b", blob))
+    long_ = len(re.findall(r"\b(?:nahi|raha|rahi|rahe)\b", blob))
+    if short == long_:
+        return reply
+    mapping = _SPELL_SHORT if short > long_ else {v: k for k, v in _SPELL_SHORT.items()}
+    return re.sub(r"\b(" + "|".join(mapping) + r")\b", lambda m: mapping[m.group(1).lower()], reply, flags=re.I)
 
 
 def _is_skip(text: str) -> bool:
@@ -970,7 +1001,8 @@ def _extract_text(data) -> str:
     return content
 
 
-async def _call_provider(messages: list, temperature: float, max_tokens: int, model: Optional[str] = None) -> str:
+async def _call_provider(messages: list, temperature: float, max_tokens: int, model: Optional[str] = None,
+                         effort: Optional[str] = None) -> str:
     use_model = model or MODEL
     key = _api_key()
     if not key:
@@ -993,8 +1025,9 @@ async def _call_provider(messages: list, temperature: float, max_tokens: int, mo
         "top_p": 0.9,
         "max_completion_tokens": max_tokens,
     }
-    if REASONING_EFFORT:
-        payload["reasoning_effort"] = REASONING_EFFORT
+    eff = REASONING_EFFORT if effort is None else effort
+    if eff:
+        payload["reasoning_effort"] = eff
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
 
@@ -1051,10 +1084,11 @@ async def _call_provider(messages: list, temperature: float, max_tokens: int, mo
         await asyncio.sleep(wait + random.uniform(0, 0.3))
 
 
-async def _call_with_deadline(messages: list, temperature: float, max_tokens: int = MAX_TOKENS) -> str:
+async def _call_with_deadline(messages: list, temperature: float, max_tokens: int = MAX_TOKENS,
+                              effort: Optional[str] = None) -> str:
     """Main model first; if it is rate-limited / empty / down, one try with the fallback model."""
     try:
-        return await asyncio.wait_for(_call_provider(messages, temperature, max_tokens), timeout=TOTAL_DEADLINE)
+        return await asyncio.wait_for(_call_provider(messages, temperature, max_tokens, None, effort), timeout=TOTAL_DEADLINE)
     except asyncio.TimeoutError:
         first = ProviderError("timeout")
     except ProviderError as e:
@@ -1063,7 +1097,7 @@ async def _call_with_deadline(messages: list, temperature: float, max_tokens: in
         raise first
     log.info("main model failed (%s), trying %s", first.kind, FALLBACK_MODEL)
     try:
-        return await asyncio.wait_for(_call_provider(messages, temperature, max_tokens, FALLBACK_MODEL),
+        return await asyncio.wait_for(_call_provider(messages, temperature, max_tokens, FALLBACK_MODEL, effort),
                                       timeout=min(TOTAL_DEADLINE, 25.0))
     except asyncio.TimeoutError:
         raise ProviderError("timeout")
@@ -1359,6 +1393,19 @@ def _thread_block(conv: Conversation, is_group: bool, speaker: str) -> str:
             "detail from the latest message:\n" + "\n".join(lines))
 
 
+_FEWSHOT = (
+    ("kuch nhi bas", "itna sasta reply 😂"),
+    ("aaj bahut neend aa rhi", "toh so ja bhai, duniya kal bhi chalegi"),
+    ("mera mood off hai", "kya hua? bata"),
+    ("tu pagal hai", "haha tu bhi kam nhi hai"),
+    ("hnn", "hnn hnn, kuch bol bhi"),
+    ("exam khatam ho gaya", "wah, kaisa gaya?"),
+    ("mujhe bore ho rha hai", "haan yaar, bore toh sab hote hai"),
+    ("tum kaun ho", "toji, tu bata"),
+    ("i am tired", "rest kar le then"),
+)
+
+
 def _build_messages(conv: Conversation, is_group: bool, speaker: str, is_owner: bool,
                     unaddressed: bool, style_hint: str = "", detail: bool = False,
                     extra_note: str = "", ctx_notes: Optional[List[str]] = None,
@@ -1421,6 +1468,10 @@ def _build_messages(conv: Conversation, is_group: bool, speaker: str, is_owner: 
     if thread:
         system += "\n\n" + thread
     messages = [{"role": "system", "content": system}]
+    if not detail:  # a few short example exchanges (style only)
+        for u_text, b_text in _FEWSHOT:
+            messages.append({"role": "user", "content": f"Rahul: {u_text}" if is_group else u_text})
+            messages.append({"role": "assistant", "content": b_text})
 
     now = time.monotonic()
     picked = []
@@ -1509,11 +1560,14 @@ async def _generate(conv: Conversation, is_group: bool, speaker: str, is_owner: 
     max_tokens = MAX_TOKENS_DETAIL if detail else MAX_TOKENS
     messages = _build_messages(conv, is_group, speaker, is_owner, unaddressed, style_hint, detail,
                                ctx_notes=ctx_notes, memory_block=memory_block)
-    cleaned = _clean_reply(await _call_with_deadline(messages, TEMPERATURE, max_tokens), detail=detail)
+    eff = None if detail else CASUAL_EFFORT
+    cleaned = _clean_reply(await _call_with_deadline(messages, TEMPERATURE, max_tokens, eff), detail=detail)
     if not cleaned:
         raise ProviderError("invalid")
     if _is_skip(cleaned):
         return None
+    if not detail:
+        cleaned = _shorten_casual(cleaned)
 
     recent = conv.recent_bot_norms(3)
     dup = _norm(cleaned) in recent  # duplicate-response prevention
@@ -1530,12 +1584,16 @@ async def _generate(conv: Conversation, is_group: bool, speaker: str, is_owner: 
             extra_note=note.strip(), ctx_notes=ctx_notes, memory_block=memory_block,
         )
         second = _clean_reply(
-            await _call_with_deadline(messages, min(1.0, TEMPERATURE + 0.1), max_tokens), detail=detail
+            await _call_with_deadline(messages, min(1.0, TEMPERATURE + 0.1), max_tokens, eff), detail=detail
         )
+        if second and not detail:
+            second = _shorten_casual(second)
         if second and not _is_skip(second) and _norm(second) not in recent:
             cleaned = second
         elif dup:
             return None
+    if not detail:
+        cleaned = _mirror_spelling(cleaned, conv)
     return _tune_emoji(cleaned, conv, keep_emoji)
 
 
@@ -3173,7 +3231,7 @@ async def _process(message: Message, text_override: Optional[str] = None, via: s
         try:
             detail = addressed and via != "sticker" and _wants_detail(text)  # never lecture when joining uninvited
             async with _Typing(chat_id, enabled=addressed):
-                canned = _greeting_reply(text, name, profile) if (via == "text" and addressed) else None
+                canned = _quick_reply(text, name, profile, conv) if (via == "text" and addressed) else None
                 reply = canned or await _generate(conv, is_group, name, is_owner, unaddressed,
                                         conv.style_for(user.id).hint(), detail, ctx_notes, memory_block,
                                         keep_emoji=bool(_EMOJI_RE.search(text)) or via == "sticker", user_text=text)
@@ -3283,6 +3341,50 @@ async def _process(message: Message, text_override: Optional[str] = None, via: s
 # ════════════════════════════════════════════════════════════════════
 #  SHORT GREETING ("hello toji" -> "hello Ram kya haal hai", name only the first time)
 # ════════════════════════════════════════════════════════════════════
+_LAUGH_RE = re.compile(r"^\W*(?:(?:ha{2,}h*|hah+a*|he+h+e*|hehe+|lol+|lmao+|lmfao|rofl|😂|🤣|😹)\W*)+$", re.I)
+_THANKS_RE = re.compile(r"^\W*(?:thanks?|thank\s*you|thnx|thx|shukriya|dhanyavad|tysm|ty)\b[\w\s!.]*$", re.I)
+_SORRY_RE = re.compile(r"^\W*(?:sorry|sry|maaf(?:\s*kar\s*do)?|my\s*bad)\b[\w\s!.]*$", re.I)
+_NIGHT_RE = re.compile(r"^\W*(?:good\s*night|gn|shubh\s*ratri|night)\b[\w\s!.]*$", re.I)
+_BYE_RE = re.compile(r"^\W*(?:bye+|tata|chal\s*bye|ttyl)\b[\w\s!.]*$", re.I)
+_HOWRU_RE = re.compile(r"^\W*(?:kaise\s*ho|kaisa\s*hai|kaise\s*hai|kya\s*haal(?:\s*hai)?|kya\s*hal|how\s*are\s*(?:you|u)|how\s*r\s*u|sup|what'?s\s*up|wassup)\W*$", re.I)
+_WYD_RE = re.compile(r"^\W*(?:(?:tu\s*|tum\s*|aap\s*)?kya\s*(?:kr|kar)\s*(?:rha|raha|rhe|rahe)(?:\s*(?:hai|ho|h))?|wyd|what\s*(?:are\s*you|r\s*u)\s*doing|kya\s*chal\s*(?:rha|raha)(?:\s*(?:hai|h))?)\W*$", re.I)
+_NAME_RE = re.compile(r"^\W*(?:tera\s*naam\s*kya\s*(?:hai|h)|tumhara\s*naam\s*kya\s*(?:hai|h)|naam\s*kya\s*(?:hai|h)|who\s*are\s*you|tu\s*kaun\s*(?:hai|h)|aap\s*kaun(?:\s*ho)?)\W*$", re.I)
+
+
+def _pick(options, conv: "Conversation") -> str:
+    recent = {_norm(t) for t in conv.last_bot_texts(4)}
+    fresh = [o for o in options if _norm(o) not in recent]
+    return random.choice(fresh or list(options))
+
+
+def _quick_reply(text: str, name: str, profile: dict, conv: "Conversation") -> Optional[str]:
+    """Fixed short answers for tiny everyday messages (hello, thanks, kya kar rha hai ...). None = ask the model."""
+    g = _greeting_reply(text, name, profile)
+    if g:
+        return g
+    t = re.sub(r"(?i)(?<!\w)toji+(?!\w)", " ", text).strip()
+    if not t or len(t.split()) > 6:
+        return None
+    en = not re.search(r"\b(?:kaise|kaisa|kya|tu|tum|hai|ho|h|kr|kar|rha|raha|naam|kaun|tera|tumhara)\b", t.lower())
+    if _LAUGH_RE.match(t):
+        return _pick(["😂", "haha", "😂😂", "lol", "hahaha"], conv)
+    if _THANKS_RE.match(t):
+        return _pick(["koi na", "arre koi baat nhi", "welcome 😄", "no problem"], conv)
+    if _SORRY_RE.match(t):
+        return _pick(["arre koi baat nhi", "koi na yaar", "chill, ho jata hai", "no problem"], conv)
+    if _NIGHT_RE.match(t):
+        return _pick(["good night 😴", "gn, so ja ab", "good night, kal baat karte hai"], conv)
+    if _BYE_RE.match(t):
+        return _pick(["bye, baad me baat karte hai", "chal bye 👋", "bye bye"], conv)
+    if _HOWRU_RE.match(t):
+        return _pick(["badhiya, tu bata", "mast hu, tu bata", "sab badhiya, tu bata"] if not en else ["good, you?", "all good, you?", "doing great, you?"], conv)
+    if _WYD_RE.match(t):
+        return _pick(["bas timepass, tu bata", "kuch khaas nhi yaar, tu bata", "bas aise hi, tu bata"] if not en else ["nothing much, you?", "just chilling, you?"], conv)
+    if _NAME_RE.match(t):
+        return _pick(["toji, tera?", "mai toji, tu bata"] if not en else ["toji, you?", "i'm toji, you?"], conv)
+    return None
+
+
 _MOOD_NOTES = {
     "sad": "They seem low. Be soft and caring, no jokes, no teasing. Ask what happened in a few words.",
     "angry": "They sound angry or irritated. Stay calm and short, don't tease. If they are rude to you, answer firmly and briefly.",
